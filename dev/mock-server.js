@@ -10,7 +10,7 @@ const path = require("path");
 
 const PORT = process.env.PORT || 3300;
 const PUB = path.join(__dirname, "..", "public");
-const API = "/plugins/signalk-tack-advisor";
+const API = "/plugins/tack-now";
 
 const DEG = Math.PI / 180;
 const KTS = 0.514444;
@@ -112,7 +112,7 @@ http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": MIME[path.extname(file)] || "application/octet-stream" });
     res.end(data);
   });
-}).listen(PORT, () => console.log("tack-advisor dev server → http://localhost:" + PORT + "/"));
+}).listen(PORT, () => console.log("tack-now dev server → http://localhost:" + PORT + "/"));
 
 function json(res, obj) {
   res.writeHead(200, { "Content-Type": "application/json" });

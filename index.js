@@ -1,9 +1,9 @@
 /*
- * signalk-tack-advisor — Signal K server plugin
+ * tack-now — Signal K server plugin
  *
  * Buffers true-wind and position history, resolves the next mark (Signal K
  * course destination, or a manual mark set from the webapp), and serves both
- * to the webapp at /plugins/signalk-tack-advisor/*. All model parameters live
+ * to the webapp at /plugins/tack-now/*. All model parameters live
  * in the plugin settings (server admin UI → Plugin Config).
  */
 const fs = require("fs");
@@ -24,8 +24,8 @@ const DEFAULTS = {
 
 module.exports = function (app) {
   const plugin = {
-    id: "signalk-tack-advisor",
-    name: "Tack Advisor",
+    id: "tack-now",
+    name: "Tack Now",
     description: "Monte Carlo tack-now-vs-hold advisor for the upwind leg",
   };
 

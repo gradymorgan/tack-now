@@ -1,4 +1,4 @@
-# signalk-tack-advisor
+# tack-now
 
 **Tack now, or hold?** A Signal K plugin + webapp that answers the oldest question on the beat with a Monte Carlo simulation: it fits a wind model to the breeze you've actually been sailing in, then races hundreds of paired futures to the next mark — one boat tacking now, one holding — and tells you what fraction of futures the tack wins.
 
@@ -14,14 +14,14 @@
 
 ## Install
 
-Install `signalk-tack-advisor` from the Signal K app store, or:
+Install `tack-now` from the Signal K app store, or:
 
 ```bash
 cd ~/.signalk
-npm install signalk-tack-advisor
+npm install tack-now
 ```
 
-Enable it in **Server → Plugin Config → Tack Advisor**, then open **Webapps → Tack Advisor**.
+Enable it in **Server → Plugin Config → Tack Now**, then open **Webapps → Tack Now**.
 
 ### Data the plugin needs
 
@@ -65,10 +65,10 @@ The mock server (`dev/mock-server.js`) simulates an oscillating breeze and a boa
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/plugins/signalk-tack-advisor/state` | GET | live values, resolved mark, settings |
-| `/plugins/signalk-tack-advisor/history` | GET | buffered wind + track |
-| `/plugins/signalk-tack-advisor/mark` | PUT | set manual mark `{latitude, longitude}` |
-| `/plugins/signalk-tack-advisor/mark` | DELETE | clear manual mark |
+| `/plugins/tack-now/state` | GET | live values, resolved mark, settings |
+| `/plugins/tack-now/history` | GET | buffered wind + track |
+| `/plugins/tack-now/mark` | PUT | set manual mark `{latitude, longitude}` |
+| `/plugins/tack-now/mark` | DELETE | clear manual mark |
 
 ## License
 

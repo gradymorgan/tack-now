@@ -1,5 +1,5 @@
 {
-  "name": "signalk-tack-advisor",
+  "name": "tack-now",
   "version": "0.1.0",
   "description": "Monte Carlo tack-now-vs-hold advisor for the upwind leg. Fits a wind model to your recorded breeze and simulates hundreds of futures against the next mark.",
   "main": "index.js",
@@ -18,7 +18,7 @@
   "author": "Grady",
   "repository": {
     "type": "git",
-    "url": "https://github.com/REPLACE-WITH-YOUR-USERNAME/signalk-tack-advisor"
+    "url": "https://github.com/REPLACE-WITH-YOUR-USERNAME/tack-now"
   },
   "engines": {
     "node": ">=16"

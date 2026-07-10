@@ -1,6 +1,6 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>Tack Advisor</title>
+<title>Tack Now</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root {
@@ -174,7 +174,7 @@
     <div class="kv"><span>Header threshold</span><b id="rThr">—</b></div>
     <div class="kv"><span>Commit / margin</span><b id="rCommit">—</b></div>
     <div class="kv"><span>Layline judgment σ</span><b id="rLaySig">—</b></div>
-    <div class="note">Edit in Signal K admin → Server → Plugin Config → Tack Advisor.</div>
+    <div class="note">Edit in Signal K admin → Server → Plugin Config → Tack Now.</div>
   </div>
 </aside>
 
@@ -200,7 +200,7 @@
 const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;
 const KTS = 0.514444;
-const API = "/plugins/signalk-tack-advisor";
+const API = "/plugins/tack-now";
 const normAng = a => ((a + 180) % 360 + 360) % 360 - 180;
 const norm360 = d => ((d % 360) + 360) % 360;
 const fmtDeg = d => String(Math.round(norm360(d))).padStart(3, "0") + "°";
