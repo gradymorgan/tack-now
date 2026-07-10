@@ -27,7 +27,7 @@ Enable it in **Server → Plugin Config → Tack Advisor**, then open **Webapps 
 
 | Path | Use |
 |---|---|
-| `environment.wind.directionTrue` (or `directionGround`) | the wind model — enable the *derived-data* plugin if you only have apparent wind |
+| `environment.wind.directionTrue` (falls back to `directionGround`, then heading + `angleTrueGround` / `angleTrueWater`) | the wind model — enable the *derived-data* plugin's Ground Wind calc if you only have apparent wind |
 | `navigation.position` | boat position and track |
 | `navigation.headingTrue` (or COG) | current tack detection |
 | `navigation.speedOverGround` | live boat speed (optional) |

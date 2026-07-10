@@ -581,11 +581,13 @@ function drawStrip() {
   const past = pastedWind || pastWind(P);
   const padL = 46, padR = 12, padT = 26, padB = 22;
 
+  const trendAt = t => P.mean + P.trend * t;
   let lo = Infinity, hi = -Infinity;
   const scan = v => { if (v < lo) lo = v; if (v > hi) hi = v; };
   past.forEach(p => scan(p[1]));
   if (results) results.winds.forEach(tr => tr.forEach(scan));
-  scan(P.mean - P.amp); scan(P.mean + P.amp);
+  scan(trendAt(STRIP_T0) - P.amp); scan(trendAt(STRIP_T0) + P.amp);
+  scan(trendAt(STRIP_T1) - P.amp); scan(trendAt(STRIP_T1) + P.amp);
   lo -= 3; hi += 3;
 
   const X = t => padL + (t - STRIP_T0) / (STRIP_T1 - STRIP_T0) * (w - padL - padR);
@@ -606,9 +608,14 @@ function drawStrip() {
   }
   ctx.textAlign = "left";
 
-  // mean-wind reference
-  ctx.setLineDash([4, 5]); ctx.strokeStyle = css("--ink-3"); ctx.globalAlpha = 0.6;
-  ctx.beginPath(); ctx.moveTo(padL, Y(P.mean)); ctx.lineTo(w - padR, Y(P.mean)); ctx.stroke();
+  // model overlay: oscillation envelope around the trend line, past and future
+  ctx.fillStyle = css("--accent-soft");
+  ctx.beginPath();
+  ctx.moveTo(X(STRIP_T0), Y(trendAt(STRIP_T0) + P.amp)); ctx.lineTo(X(STRIP_T1), Y(trendAt(STRIP_T1) + P.amp));
+  ctx.lineTo(X(STRIP_T1), Y(trendAt(STRIP_T1) - P.amp)); ctx.lineTo(X(STRIP_T0), Y(trendAt(STRIP_T0) - P.amp));
+  ctx.closePath(); ctx.fill();
+  ctx.setLineDash([4, 5]); ctx.strokeStyle = css("--ink-3"); ctx.globalAlpha = 0.7;
+  ctx.beginPath(); ctx.moveTo(X(STRIP_T0), Y(trendAt(STRIP_T0))); ctx.lineTo(X(STRIP_T1), Y(trendAt(STRIP_T1))); ctx.stroke();
   ctx.setLineDash([]); ctx.globalAlpha = 1;
 
   // "now" divider

@@ -93,8 +93,15 @@ module.exports = function (app) {
 
   function pickTwd() {
     const fresh = (k, ms) => latest.stamp[k] != null && Date.now() - latest.stamp[k] < ms;
+    // Preference order: a published direction (ground wind on installs running
+    // derived-data's Ground Wind calc), then TWD computed from heading + true
+    // wind angle (ground- then water-referenced).
     if (fresh("twd", 10e3)) return latest.twd;
     if (fresh("twdGround", 10e3)) return latest.twdGround;
+    if (fresh("hdg", 10e3)) {
+      if (fresh("atg", 10e3)) return latest.hdg + latest.atg;
+      if (fresh("atw", 10e3)) return latest.hdg + latest.atw;
+    }
     return null;
   }
   function pickTws() {
@@ -132,6 +139,8 @@ module.exports = function (app) {
     try { manualMark = JSON.parse(fs.readFileSync(markFile(), "utf8")); } catch (e) { manualMark = null; }
     listen("environment.wind.directionTrue", (v) => { latest.twd = v; latest.stamp.twd = Date.now(); });
     listen("environment.wind.directionGround", (v) => { latest.twdGround = v; latest.stamp.twdGround = Date.now(); });
+    listen("environment.wind.angleTrueGround", (v) => { latest.atg = v; latest.stamp.atg = Date.now(); });
+    listen("environment.wind.angleTrueWater", (v) => { latest.atw = v; latest.stamp.atw = Date.now(); });
     listen("environment.wind.speedTrue", (v) => { latest.tws = v; latest.stamp.tws = Date.now(); });
     listen("environment.wind.speedOverGround", (v) => { latest.twsGround = v; latest.stamp.twsGround = Date.now(); });
     listen("navigation.position", (v) => { latest.pos = v; latest.stamp.pos = Date.now(); });
