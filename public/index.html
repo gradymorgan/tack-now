@@ -558,8 +558,9 @@ const demo = {
       const distM = Math.hypot(mk.x - b.x, mk.y - b.y);
       if (distM < 60) { b.x = 250; b.y = -1450; b.tack = "port"; }  // restart the beat
       // simple beating helm: tack on 7° headers or the layline
-      const shift = normAng(twd - 18);
-      const other = headingFor(b.tack === "port" ? "stbd" : "port", 18, 43);
+      const ref = 18 + 0.25 * ((this._bt - this.t0) / 60000);  // trend-adjusted mean, matches the demo breeze
+      const shift = normAng(twd - ref);
+      const other = headingFor(b.tack === "port" ? "stbd" : "port", ref, 43);
       const d = normAng(bear - other);
       const layline = (b.tack === "port" && d <= -2) || (b.tack === "stbd" && d >= 2);
       const header = (b.tack === "port" && shift > 7) || (b.tack === "stbd" && shift < -7);

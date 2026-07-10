@@ -18,7 +18,7 @@
   "author": "Grady",
   "repository": {
     "type": "git",
-    "url": "https://github.com/REPLACE-WITH-YOUR-USERNAME/tack-now"
+    "url": "https://github.com/gradymorgan/tack-now"
   },
   "engines": {
     "node": ">=16"

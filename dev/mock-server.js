@@ -58,8 +58,9 @@ function stepBoat(toMs) {
     const mk = world.mark;
     const bear = Math.atan2(mk.x - b.x, mk.y - b.y) / DEG;
     if (Math.hypot(mk.x - b.x, mk.y - b.y) < 60) { b.x = 250; b.y = -1450; b.tack = "port"; }
-    const shift = normAng(world.twd - 18);
-    const otherHdg = b.tack === "port" ? 18 - 43 : 18 + 43;
+    const ref = 18 + 0.25 * ((world.bt - t0) / 60000);   // trend-adjusted mean, matches the breeze
+    const shift = normAng(world.twd - ref);
+    const otherHdg = b.tack === "port" ? ref - 43 : ref + 43;
     const d = normAng(bear - otherHdg);
     const layline = (b.tack === "port" && d <= -2) || (b.tack === "stbd" && d >= 2);
     const header = (b.tack === "port" && shift > 7) || (b.tack === "stbd" && shift < -7);
