@@ -70,13 +70,23 @@
   #srcBadge.stale .dot { background: var(--mark); }
 
   /* ---------- layout ---------- */
-  main { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: 0; }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  main { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  /* parameter drawer: hidden by default, slides over the chart */
   aside {
+    position: fixed; top: 0; bottom: 0; left: 0; width: min(320px, 86vw); z-index: 20;
+    transform: translateX(-105%); transition: transform 0.22s ease;
     border-right: 1px solid var(--line); background: var(--panel);
-    padding: 12px 14px 24px; overflow-y: auto; min-height: 0;
+    padding: 12px 14px 24px; overflow-y: auto;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.18);
   }
-  @media (max-width: 900px) { aside { border-right: none; border-bottom: 1px solid var(--line); } }
+  body.drawer-open aside { transform: translateX(0); }
+  @media (prefers-reduced-motion: reduce) { aside { transition: none; } }
+  .drawerhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .drawerhead h2 {
+    margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--ink-3); font-weight: 600;
+  }
+  #panelBtn { font-size: 15px; line-height: 1; padding: 7px 11px; }
 
   .card2 { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; background: var(--surface); }
   .card2 h3 {
@@ -92,9 +102,12 @@
     border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 12px; cursor: pointer;
   }
   button:hover { border-color: var(--tack); }
-  .legend { display: flex; gap: 12px; font-size: 12px; color: var(--ink-2); margin: 2px 0 10px; }
   .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 5px; vertical-align: -1px; }
   .sw.tack { background: var(--tack); } .sw.hold { background: var(--hold); }
+  .cardlegend {
+    position: absolute; top: 26px; left: 13px; display: flex; gap: 12px;
+    font-size: 11.5px; color: var(--ink-2); z-index: 2; pointer-events: none;
+  }
 
   /* ---------- canvases ---------- */
   .viz { display: grid; grid-template-rows: minmax(0, 1fr) 178px; min-height: 0; padding: 10px 12px 12px; gap: 10px; }
@@ -113,6 +126,19 @@
     padding: 3px 8px; font-size: 11.5px; color: var(--ink); box-shadow: 0 2px 8px rgba(0,0,0,0.12);
   }
   #status { position: absolute; top: 8px; right: 13px; font-size: 11px; color: var(--ink-3); }
+
+  /* compact layout for 7" tablets and other short screens */
+  @media (max-height: 720px) {
+    header { padding: 7px 12px; gap: 14px; }
+    .verdict { min-width: 260px; gap: 10px; }
+    #winPct { font-size: 34px; }
+    #verdictText { font-size: 13.5px; }
+    #verdictSub { font-size: 11px; }
+    .gauge { padding: 4px 10px 3px; }
+    .gauge .val { font-size: 16px; }
+    .gauge .unit { display: none; }
+    .viz { grid-template-rows: minmax(0, 1fr) 128px; padding: 7px 8px 8px; gap: 7px; }
+  }
 </style>
 
 <div class="app">
@@ -132,13 +158,14 @@
     <div class="gauge"><div class="lbl">Tack</div><div class="val" id="gTack">—</div><div class="unit">&nbsp;</div></div>
   </div>
   <div id="srcBadge"><span class="dot"></span><span id="srcText">connecting</span></div>
+  <button id="panelBtn" aria-label="Show model details" title="Model details">☰</button>
 </header>
 
 <main>
 <aside>
-  <div class="legend">
-    <span><span class="sw tack"></span>Tack now</span>
-    <span><span class="sw hold"></span>Hold</span>
+  <div class="drawerhead">
+    <h2>Model &amp; decision detail</h2>
+    <button id="panelClose" aria-label="Close panel">✕</button>
   </div>
 
   <div class="card2">
@@ -181,6 +208,10 @@
 <div class="viz">
   <div class="card">
     <div class="cap">Course — simulated routes to the mark</div>
+    <div class="cardlegend">
+      <span><span class="sw tack"></span>Tack now</span>
+      <span><span class="sw hold"></span>Hold</span>
+    </div>
     <div id="status"></div>
     <canvas id="course"></canvas>
     <div class="hint">Solid line: your track · tap to set a manual mark</div>
@@ -912,6 +943,8 @@ $("clearMark").addEventListener("click", async () => {
 });
 
 $("reroll").addEventListener("click", () => { seed = (seed * 1664525 + 1013904223) >>> 0; run(); });
+$("panelBtn").addEventListener("click", () => document.body.classList.toggle("drawer-open"));
+$("panelClose").addEventListener("click", () => document.body.classList.remove("drawer-open"));
 $("refit").addEventListener("click", async () => { await loadHistory(); refit(); updateCards(); run(); });
 
 /* ================= wiring ================= */
@@ -926,7 +959,8 @@ function drawAll() { drawCourse(); drawStrip(); }
 
 async function tick() {
   await loadState();
-  updateCards(); drawAll();
+  updateCards();
+  run();               // fresh Monte Carlo on live inputs every tick (~200 ms for 600 sims)
 }
 async function slowTick() {
   await loadHistory();
