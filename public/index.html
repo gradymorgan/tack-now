@@ -422,13 +422,26 @@ function fitWind(hist, windowMin, tauDefault) {
   }
   const tail = v.slice(-8);
   const cur = tail.reduce((a, b) => a + b) / tail.length;
-  // smoothed wind (trend + slow residual, fast noise removed) for the chart overlay
-  const step = Math.max(1, Math.floor(n / 240));
-  const smoothPts = [];
-  for (let i = 0; i < n; i += step) smoothPts.push([t[i] * 60, mv + trend * (t[i] - mt) + smooth[i]]);  // [sec, deg]
+  // oscillation phase by least squares: regress residuals on sin/cos at the
+  // detected period, so the drawn model wave lines up with the recorded swings
+  const w = 2 * Math.PI / period;
+  let Sss = 0, Scc = 0, Ssc = 0, Srs = 0, Src = 0;
+  for (let i = 0; i < n; i++) {
+    const ts = t[i] * 60;
+    const si = Math.sin(w * ts), ci = Math.cos(w * ts);
+    Sss += si * si; Scc += ci * ci; Ssc += si * ci;
+    Srs += resid[i] * si; Src += resid[i] * ci;
+  }
+  const det = Sss * Scc - Ssc * Ssc;
+  let phase = 0;
+  if (Math.abs(det) > 1e-9) {
+    const a = (Srs * Scc - Src * Ssc) / det;   // coefficient on sin
+    const b = (Src * Sss - Srs * Ssc) / det;   // coefficient on cos
+    phase = Math.atan2(b, a);                  // a·sin + b·cos = A·sin(ωt + φ)
+  }
   return {
     cur: norm360(cur), mean: norm360(cur + normAng(meanNow - cur)),
-    trend, amp, period, sigma, tau: tauDefault, smoothPts,
+    trend, amp, period, sigma, tau: tauDefault, phase,
     windowUsed: Math.round((t[n - 1] - t[0])), samples: n, source: "fit",
   };
 }
@@ -888,19 +901,25 @@ function drawStrip() {
     past.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])));
     ctx.stroke(); ctx.globalAlpha = 1;
   }
-  // smoothed wind (what the fit extracted) over the raw trace, re-anchored in
-  // case the fit unwrapped into a different 360° branch than the raw drawing
-  if (fit && fit.smoothPts && fit.smoothPts.length > 1) {
-    const off = 360 * Math.round((fit.smoothPts[fit.smoothPts.length - 1][1] - P.cur) / 360);
+  // model projection: the fitted sinusoid (LS phase, model amp/period/trend),
+  // solid over the recorded past, faded where it extrapolates into the future
+  if (P.amp > 0.3) {
+    const phase = (fit && fit.phase != null && (!settings || !settings.windOverride || !settings.windOverride.enabled))
+      ? fit.phase
+      : Math.asin(clamp((P.cur - P.mean) / Math.max(0.31, P.amp), -1, 1));  // fallback: anchor at now
+    const wv = 2 * Math.PI / P.period;
+    const proj = t => trendAt(t) + P.amp * Math.sin(wv * t + phase);
     ctx.strokeStyle = css("--tack"); ctx.lineWidth = 1.8;
-    ctx.beginPath();
-    let started = false;
-    for (const [ts, v] of fit.smoothPts) {
-      if (ts < T0) continue;
-      if (!started) { ctx.moveTo(X(ts), Y(v - off)); started = true; }
-      else ctx.lineTo(X(ts), Y(v - off));
+    for (const [ta, tb, alpha] of [[T0, 0, 1], [0, T1, 0.35]]) {
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      const stepT = (tb - ta) / 160;
+      for (let tt = ta; tt <= tb; tt += stepT) {
+        if (tt === ta) ctx.moveTo(X(tt), Y(proj(tt))); else ctx.lineTo(X(tt), Y(proj(tt)));
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
+    ctx.globalAlpha = 1;
   }
   stripC._map = { X, Y, T0, T1, padL, padR, past, P };
 }
