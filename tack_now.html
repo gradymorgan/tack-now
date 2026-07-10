@@ -1,0 +1,735 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Tack or Hold — Upwind Monte Carlo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --surface: #F4F6F7;
+    --panel: #FFFFFF;
+    --ink: #16232B;
+    --ink-2: #51626D;
+    --ink-3: #8A99A3;
+    --line: #DDE4E8;
+    --tack: #0793B3;      /* tacked-now series */
+    --hold: #B45D0E;      /* held series */
+    --mark: #C4453B;      /* buoy — status red, reserved */
+    --grid: rgba(22,35,43,0.06);
+    --path-alpha: 0.07;
+    --accent-soft: rgba(7,147,179,0.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface: #0E151B;
+      --panel: #151F27;
+      --ink: #E3ECF1;
+      --ink-2: #9FB1BB;
+      --ink-3: #64767F;
+      --line: #24313A;
+      --tack: #1595AC;
+      --hold: #C8802F;
+      --mark: #D4574C;
+      --grid: rgba(227,236,241,0.06);
+      --path-alpha: 0.09;
+      --accent-soft: rgba(21,149,172,0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    --surface: #0E151B; --panel: #151F27; --ink: #E3ECF1; --ink-2: #9FB1BB;
+    --ink-3: #64767F; --line: #24313A; --tack: #1595AC; --hold: #C8802F;
+    --mark: #D4574C; --grid: rgba(227,236,241,0.06); --path-alpha: 0.09;
+    --accent-soft: rgba(21,149,172,0.14);
+  }
+  :root[data-theme="light"] {
+    --surface: #F4F6F7; --panel: #FFFFFF; --ink: #16232B; --ink-2: #51626D;
+    --ink-3: #8A99A3; --line: #DDE4E8; --tack: #0793B3; --hold: #B45D0E;
+    --mark: #C4453B; --grid: rgba(22,35,43,0.06); --path-alpha: 0.07;
+    --accent-soft: rgba(7,147,179,0.10);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface); color: var(--ink);
+    font: 14px/1.45 "Avenir Next", "Avenir", -apple-system, "Segoe UI", sans-serif;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+
+  .app { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100vh; }
+  @media (max-width: 900px) { .app { height: auto; min-height: 100vh; } }
+
+  /* ---------- instrument bar ---------- */
+  header {
+    display: flex; align-items: center; gap: 28px; flex-wrap: wrap;
+    padding: 14px 22px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  .verdict { display: flex; align-items: baseline; gap: 14px; }
+  #winPct {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums;
+    font-size: 52px; font-weight: 700; line-height: 1; letter-spacing: -1px;
+  }
+  #verdictText { font-size: 17px; font-weight: 600; }
+  #verdictSub { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+  .chip {
+    border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px;
+    font-size: 12px; color: var(--ink-2); background: var(--surface);
+    display: flex; align-items: center; gap: 7px; white-space: nowrap;
+  }
+  .chip b { color: var(--ink); font-weight: 600; }
+  .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .sw.tack { background: var(--tack); } .sw.hold { background: var(--hold); }
+
+  /* ---------- layout ---------- */
+  main { display: grid; grid-template-columns: 296px minmax(0, 1fr); gap: 0; min-height: 0; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+  /* ---------- sidebar ---------- */
+  aside {
+    border-right: 1px solid var(--line); background: var(--panel);
+    padding: 14px 18px 30px; overflow-y: auto; min-height: 0;
+  }
+  @media (max-width: 900px) { aside { border-right: none; border-bottom: 1px solid var(--line); } }
+  .group { margin-bottom: 18px; }
+  .group h3 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em;
+    color: var(--ink-3); margin: 14px 0 8px; font-weight: 600;
+  }
+  .ctl { margin-bottom: 9px; }
+  .ctl label { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--ink-2); margin-bottom: 2px; }
+  .ctl label output { color: var(--ink); font-weight: 600; }
+  input[type=range] { width: 100%; accent-color: var(--tack); height: 20px; }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    flex: 1; border: none; background: transparent; color: var(--ink-2);
+    padding: 6px 0; font: inherit; font-size: 12.5px; cursor: pointer;
+  }
+  .seg button.on { background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+  .presets { display: flex; gap: 6px; flex-wrap: wrap; }
+  .presets button, #reroll, #fitBtn {
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+    border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .presets button:hover, #reroll:hover, #fitBtn:hover { border-color: var(--tack); }
+  details { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-top: 6px; }
+  details summary { cursor: pointer; font-size: 12.5px; color: var(--ink-2); }
+  textarea {
+    width: 100%; height: 90px; margin-top: 8px; background: var(--surface); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 6px; font: 11.5px/1.4 ui-monospace, Menlo, monospace; padding: 6px;
+  }
+  #fitNote { font-size: 11.5px; color: var(--ink-3); margin-top: 4px; }
+
+  /* ---------- canvases ---------- */
+  .viz { display: grid; grid-template-rows: minmax(0, 1fr) 190px; min-height: 0; padding: 12px 16px 16px; gap: 12px; }
+  @media (max-width: 900px) { .viz { grid-template-rows: 62vh 190px; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; position: relative; overflow: hidden; min-height: 0; }
+  .card .cap {
+    position: absolute; top: 9px; left: 14px; font-size: 11px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-3); pointer-events: none; z-index: 2;
+  }
+  .card .hint { position: absolute; bottom: 8px; left: 14px; font-size: 11.5px; color: var(--ink-3); pointer-events: none; }
+  /* absolutely positioned so canvas pixel size can never feed back into layout
+     (Safari otherwise loops: canvas resize -> card grows -> ResizeObserver -> resize) */
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #course { cursor: crosshair; }
+  #tip {
+    position: absolute; pointer-events: none; display: none; z-index: 3;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    padding: 3px 8px; font-size: 11.5px; color: var(--ink); box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  }
+  #status { position: absolute; top: 9px; right: 14px; font-size: 11px; color: var(--ink-3); }
+</style>
+
+<div class="app">
+<header>
+  <div class="verdict">
+    <div id="winPct" class="mono">—</div>
+    <div>
+      <div id="verdictText">Running…</div>
+      <div id="verdictSub"></div>
+    </div>
+  </div>
+  <div class="chips">
+    <div class="chip"><span class="sw tack"></span>Tack now</div>
+    <div class="chip"><span class="sw hold"></span>Hold</div>
+    <div class="chip">median gain <b id="medGain" class="mono">—</b></div>
+    <div class="chip">tacks <b id="tackCounts" class="mono">—</b></div>
+    <div class="chip"><b id="simCount" class="mono">—</b> sims</div>
+  </div>
+</header>
+
+<main>
+<aside>
+  <div class="group">
+    <h3>Presets</h3>
+    <div class="presets">
+      <button data-preset="osc">Oscillating</button>
+      <button data-preset="persist">Persistent shift</button>
+      <button data-preset="chaos">Puffy &amp; random</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <h3>Wind — now &amp; recorded</h3>
+    <div class="ctl"><label>Current wind dir <output id="o_cur"></output></label>
+      <input type="range" id="p_cur" min="-40" max="40" step="1" value="8"></div>
+    <div class="ctl"><label>Mean wind dir <output id="o_mean"></output></label>
+      <input type="range" id="p_mean" min="-40" max="40" step="1" value="0"></div>
+    <details>
+      <summary>Paste recorded wind (fit params)</summary>
+      <textarea id="windData" placeholder="seconds,TWD°  one sample per line
+0,355
+60,358
+120,004
+180,006"></textarea>
+      <button id="fitBtn">Fit from data</button>
+      <div id="fitNote"></div>
+    </details>
+  </div>
+
+  <div class="group">
+    <h3>Wind — future model</h3>
+    <div class="ctl"><label>Oscillation amplitude <output id="o_amp"></output></label>
+      <input type="range" id="p_amp" min="0" max="25" step="1" value="8"></div>
+    <div class="ctl"><label>Oscillation period <output id="o_period"></output></label>
+      <input type="range" id="p_period" min="2" max="20" step="0.5" value="6"></div>
+    <div class="ctl"><label>Persistent trend <output id="o_trend"></output></label>
+      <input type="range" id="p_trend" min="-3" max="3" step="0.1" value="0"></div>
+    <div class="ctl"><label>Random noise σ <output id="o_sigma"></output></label>
+      <input type="range" id="p_sigma" min="0" max="12" step="0.5" value="4"></div>
+    <div class="ctl"><label>Shift persistence <output id="o_tau"></output></label>
+      <input type="range" id="p_tau" min="20" max="600" step="10" value="120"></div>
+  </div>
+
+  <div class="group">
+    <h3>Boat</h3>
+    <div class="ctl"><label>Upwind speed <output id="o_spd"></output></label>
+      <input type="range" id="p_spd" min="3" max="10" step="0.25" value="6"></div>
+    <div class="ctl"><label>Tacking angle (TWA) <output id="o_twa"></output></label>
+      <input type="range" id="p_twa" min="35" max="55" step="1" value="43"></div>
+    <div class="ctl"><label>Tack cost <output id="o_cost"></output></label>
+      <input type="range" id="p_cost" min="0" max="20" step="1" value="6"></div>
+    <div class="ctl"><label style="margin-bottom:4px">Current tack</label>
+      <div class="seg" id="tackSeg">
+        <button data-tack="port" class="on">Port</button>
+        <button data-tack="stbd">Starboard</button>
+      </div></div>
+  </div>
+
+  <div class="group">
+    <h3>Tactics (both boats)</h3>
+    <div class="ctl"><label>Header threshold <output id="o_thr"></output></label>
+      <input type="range" id="p_thr" min="1" max="20" step="1" value="6"></div>
+    <div class="ctl"><label>Commitment after tack <output id="o_commit"></output></label>
+      <input type="range" id="p_commit" min="10" max="240" step="5" value="60"></div>
+    <div class="ctl"><label>Layline margin <output id="o_lay"></output></label>
+      <input type="range" id="p_lay" min="-4" max="8" step="1" value="2"></div>
+    <div class="ctl"><label>Layline judgment σ <output id="o_laysig"></output></label>
+      <input type="range" id="p_laysig" min="0" max="8" step="0.5" value="3"></div>
+  </div>
+
+  <div class="group">
+    <h3>Simulation</h3>
+    <div class="ctl"><label>Simulations <output id="o_n"></output></label>
+      <input type="range" id="p_n" min="100" max="2000" step="100" value="600"></div>
+    <div class="ctl"><label>Paths drawn <output id="o_paths"></output></label>
+      <input type="range" id="p_paths" min="0" max="250" step="10" value="120"></div>
+    <button id="reroll">↻ Re-roll wind futures</button>
+  </div>
+</aside>
+
+<div class="viz">
+  <div class="card">
+    <div class="cap">Course — simulated routes to the top mark</div>
+    <div id="status"></div>
+    <canvas id="course"></canvas>
+    <div class="hint">Click the course to move your boat</div>
+  </div>
+  <div class="card">
+    <div class="cap">Wind direction — recorded past · simulated futures</div>
+    <canvas id="strip"></canvas>
+    <div id="tip" class="mono"></div>
+  </div>
+</div>
+</main>
+</div>
+
+<script>
+"use strict";
+/* ================= utilities ================= */
+const $ = id => document.getElementById(id);
+const DEG = Math.PI / 180;
+const KTS = 0.514444;                       // knots -> m/s
+const normAng = a => ((a + 180) % 360 + 360) % 360 - 180;
+const fmtDeg = d => { let x = Math.round(((d % 360) + 360) % 360); return String(x).padStart(3, "0") + "°"; };
+
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function gauss(rng) {
+  let u = 0, v = 0;
+  while (u === 0) u = rng(); while (v === 0) v = rng();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/* ================= world ================= */
+const MARK = { x: 0, y: 850 };              // metres, y = north
+const WORLD = { x0: -560, x1: 560, y0: -90, y1: 990 };
+let boatPos = { x: 0, y: 20 };
+let boatTack = "port";                       // wind over port side, heading = twd + twa
+let seed = 20260709;
+
+/* ================= parameters ================= */
+const sliders = {
+  cur:   { unit: v => fmtDeg(v) },
+  mean:  { unit: v => fmtDeg(v) },
+  amp:   { unit: v => "±" + v + "°" },
+  period:{ unit: v => v + " min" },
+  trend: { unit: v => (v > 0 ? "+" : "") + v + "°/min" },
+  sigma: { unit: v => v + "°/√min" },
+  tau:   { unit: v => v + " s" },
+  spd:   { unit: v => v + " kn" },
+  twa:   { unit: v => v + "°" },
+  cost:  { unit: v => v + " s" },
+  thr:   { unit: v => v + "°" },
+  commit:{ unit: v => v + " s" },
+  lay:   { unit: v => (v > 0 ? "+" : "") + v + "°" },
+  laysig:{ unit: v => "±" + v + "°" },
+  n:     { unit: v => v },
+  paths: { unit: v => v },
+};
+function params() {
+  const g = id => parseFloat($("p_" + id).value);
+  return {
+    cur: g("cur"), mean: g("mean"), amp: g("amp"), period: g("period") * 60,
+    trend: g("trend") / 60, sigma: g("sigma"), tau: g("tau"),
+    spd: g("spd") * KTS, twa: g("twa"), cost: g("cost"),
+    thr: g("thr"), commit: g("commit"), lay: g("lay"), laySig: g("laysig"),
+    n: g("n"), pathsShown: g("paths"),
+  };
+}
+
+/* ================= simulation ================= */
+const DT = 2, MAX_T = 2700, MARK_R = 15;
+
+function headingFor(tack, twd, twa) { return tack === "port" ? twd + twa : twd - twa; }
+
+function makeBoat(tack) {
+  return { x: boatPos.x, y: boatPos.y, tack, freeze: 0, lastTack: -1e9, done: false, time: 0, tacks: 0, prevDist: 1e9 };
+}
+function doTack(b, t, P) { b.tack = b.tack === "port" ? "stbd" : "port"; b.freeze = P.cost; b.lastTack = t; b.tacks++; }
+
+function policy(b, twd, t, P) {
+  // Laylines are called on the expected wind (mean + trend), not the gust of the
+  // moment — chasing instantaneous lifts into the corner is what causes overstanding.
+  // Margin > 0 tacks past the line (insurance to fetch); < 0 shoots it early.
+  // Skipped close to the mark, where bearing swings too fast to be a useful signal.
+  if (Math.hypot(MARK.x - b.x, MARK.y - b.y) > 30 && t - b.lastTack >= 8) {
+    const bear = Math.atan2(MARK.x - b.x, MARK.y - b.y) / DEG;
+    const judgeW = P.mean + P.trend * t;
+    const other = headingFor(b.tack === "port" ? "stbd" : "port", judgeW, P.twa);
+    const d = normAng(bear - other);
+    const m = P.lay + (b.layErr || 0);
+    if ((b.tack === "port" && d <= -m) || (b.tack === "stbd" && d >= m)) return true;
+  }
+  // header rule: only when free to manoeuvre, judged against the trend-adjusted mean
+  if (t - b.lastTack < P.commit) return false;
+  const shift = normAng(twd - (P.mean + P.trend * t));
+  return (b.tack === "port" && shift > P.thr) || (b.tack === "stbd" && shift < -P.thr);
+}
+
+function stepBoat(b, twd, t, P, path) {
+  if (b.done) return;
+  if (b.freeze > 0) { b.freeze -= DT; if (path) path.push(b.x, b.y); return; }
+  // free leg: if the mark can be laid without pinching on this tack, steer straight
+  // at it (a real boat cracks off) — an overstand then costs distance, not a miss
+  const bear = Math.atan2(MARK.x - b.x, MARK.y - b.y) / DEG;
+  const rel = normAng(bear - twd);
+  const canFetch = b.tack === "port" ? rel >= P.twa : rel <= -P.twa;
+  if (!canFetch && policy(b, twd, t, P)) { doTack(b, t, P); if (path) path.push(b.x, b.y); return; }
+  const h = (canFetch ? bear : headingFor(b.tack, twd, P.twa)) * DEG;
+  b.x += P.spd * Math.sin(h) * DT;
+  b.y += P.spd * Math.cos(h) * DT;
+  if (path) path.push(b.x, b.y);
+  const dist = Math.hypot(MARK.x - b.x, MARK.y - b.y);
+  if (dist < MARK_R) {
+    const f = b.prevDist > MARK_R ? (b.prevDist - MARK_R) / Math.max(1e-6, b.prevDist - dist) : 1;
+    b.done = true; b.time = t - DT + DT * Math.min(1, f);
+  } else if (b.y > MARK.y + 40) {
+    // overshot the mark upwind (late shift inside the layline guard) — score with a miss penalty
+    b.done = true; b.time = t + 2 * dist / P.spd;
+  }
+  b.prevDist = dist;
+}
+
+function simulateOne(rng, P, recordPath, recordWind) {
+  // Oscillation phase is conditioned on the current wind reading — we know where
+  // in the cycle we are, up to the rising/falling ambiguity plus jitter. The
+  // residual the oscillation can't explain decays with the persistence time.
+  const off = P.amp > 0.01 ? Math.max(-1, Math.min(1, (P.cur - P.mean) / P.amp)) : 0;
+  let phase = Math.asin(off);
+  if (rng() < 0.5) phase = Math.PI - phase;
+  phase += 0.6 * gauss(rng);
+  let dev = P.cur - (P.mean + P.amp * Math.sin(phase));
+  const A = makeBoat(boatTack), B = makeBoat(boatTack);
+  A.layErr = B.layErr = P.laySig * gauss(rng);   // same helm misjudges both futures alike
+  doTack(A, 0, P); A.lastTack = 0;           // A tacks immediately
+  B.lastTack = 0;                            // B is committed to holding
+  const pathA = recordPath ? [A.x, A.y] : null, pathB = recordPath ? [B.x, B.y] : null;
+  const windTrace = recordWind ? [] : null;
+  for (let t = DT; t <= MAX_T; t += DT) {
+    dev += -dev * (DT / P.tau) + P.sigma * Math.sqrt(DT / 60) * gauss(rng);
+    const twd = P.mean + P.trend * t + P.amp * Math.sin(2 * Math.PI * t / P.period + phase) + dev;
+    stepBoat(A, twd, t, P, pathA);
+    stepBoat(B, twd, t, P, pathB);
+    if (windTrace && (t / DT) % 8 === 0 && t <= 1560) windTrace.push(twd);
+    if (A.done && B.done) break;
+  }
+  const finish = b => b.done ? b.time : MAX_T + Math.hypot(MARK.x - b.x, MARK.y - b.y);
+  return { tA: finish(A), tB: finish(B), tacksA: A.tacks, tacksB: B.tacks, pathA, pathB, windTrace };
+}
+
+/* ================= run controller ================= */
+let runToken = 0;
+let results = null;
+
+function run() {
+  const P = params();
+  const token = ++runToken;
+  const rng = mulberry32(seed);
+  const N = P.n, K = Math.min(P.pathsShown, N), W = Math.min(30, N);
+  const res = { wins: 0, diffs: [], tacksA: 0, tacksB: 0, pathsA: [], pathsB: [], winds: [], done: 0, N, P };
+  results = res;
+  $("status").textContent = "running…";
+
+  let i = 0;
+  (function chunk() {
+    if (token !== runToken) return;
+    const end = Math.min(i + 60, N);
+    for (; i < end; i++) {
+      const r = simulateOne(rng, P, i < K, i < W);
+      if (r.tA < r.tB - 0.5) res.wins++; else if (Math.abs(r.tA - r.tB) <= 0.5) res.wins += 0.5;
+      res.diffs.push(r.tB - r.tA);
+      res.tacksA += r.tacksA; res.tacksB += r.tacksB;
+      if (r.pathA) { res.pathsA.push(r.pathA); res.pathsB.push(r.pathB); }
+      if (r.windTrace) res.winds.push(r.windTrace);
+    }
+    res.done = i;
+    if (i < N) { drawAll(); setTimeout(chunk, 0); }
+    else { $("status").textContent = ""; drawAll(); updateStats(); }
+  })();
+}
+
+function updateStats() {
+  const r = results; if (!r || !r.done) return;
+  const pct = 100 * r.wins / r.done;
+  $("winPct").textContent = pct.toFixed(0) + "%";
+  $("winPct").style.color = pct >= 52 ? css("--tack") : pct <= 48 ? css("--hold") : css("--ink");
+  $("verdictText").textContent =
+    pct >= 52 ? "Tack now — it wins " + pct.toFixed(0) + "% of futures"
+    : pct <= 48 ? "Hold — tacking wins only " + pct.toFixed(0) + "%"
+    : "Toss-up — sail your plan";
+  const shift = normAng(r.P.cur - r.P.mean);
+  const rel = boatTack === "port" ? shift : -shift;
+  $("verdictSub").textContent =
+    (boatTack === "port" ? "Port tack" : "Starboard tack") + " · currently " +
+    (rel > 1 ? "headed " + Math.abs(rel).toFixed(0) + "°" : rel < -1 ? "lifted " + Math.abs(rel).toFixed(0) + "°" : "on mean wind");
+  const d = [...r.diffs].sort((a, b) => a - b);
+  const med = d[Math.floor(d.length / 2)];
+  $("medGain").textContent = (med >= 0 ? "+" : "−") + Math.abs(med).toFixed(0) + " s";
+  $("tackCounts").textContent = (r.tacksA / r.done).toFixed(1) + " / " + (r.tacksB / r.done).toFixed(1);
+  $("simCount").textContent = r.done;
+}
+
+/* ================= course canvas ================= */
+const courseC = $("course"), stripC = $("strip");
+
+function fitCanvas(c) {
+  const dpr = window.devicePixelRatio || 1;
+  const r = c.getBoundingClientRect();
+  if (c.width !== Math.round(r.width * dpr) || c.height !== Math.round(r.height * dpr)) {
+    c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr);
+  }
+  const ctx = c.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w: r.width, h: r.height };
+}
+
+function courseTransform(w, h) {
+  const sx = w / (WORLD.x1 - WORLD.x0), sy = h / (WORLD.y1 - WORLD.y0);
+  const s = Math.min(sx, sy);
+  const ox = (w - s * (WORLD.x1 - WORLD.x0)) / 2, oy = (h - s * (WORLD.y1 - WORLD.y0)) / 2;
+  return {
+    X: x => ox + (x - WORLD.x0) * s,
+    Y: y => h - oy - (y - WORLD.y0) * s,
+    invX: px => WORLD.x0 + (px - ox) / s,
+    invY: py => WORLD.y0 + (h - oy - py) / s,
+    s,
+  };
+}
+
+function drawCourse() {
+  const { ctx, w, h } = fitCanvas(courseC);
+  const T = courseTransform(w, h);
+  const P = results ? results.P : params();
+  ctx.clearRect(0, 0, w, h);
+
+  // faint grid every 200 m
+  ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+  for (let gx = -400; gx <= 400; gx += 200) { ctx.beginPath(); ctx.moveTo(T.X(gx), T.Y(WORLD.y0)); ctx.lineTo(T.X(gx), T.Y(WORLD.y1)); ctx.stroke(); }
+  for (let gy = 0; gy <= 800; gy += 200) { ctx.beginPath(); ctx.moveTo(T.X(WORLD.x0), T.Y(gy)); ctx.lineTo(T.X(WORLD.x1), T.Y(gy)); ctx.stroke(); }
+
+  // laylines from the mark (mean wind)
+  ctx.setLineDash([5, 5]); ctx.strokeStyle = css("--ink-3"); ctx.globalAlpha = 0.5;
+  for (const side of [-1, 1]) {
+    const a = (P.mean + 180 + side * P.twa) * DEG;
+    ctx.beginPath(); ctx.moveTo(T.X(MARK.x), T.Y(MARK.y));
+    ctx.lineTo(T.X(MARK.x + 1500 * Math.sin(a)), T.Y(MARK.y + 1500 * Math.cos(a)));
+    ctx.stroke();
+  }
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+
+  // simulated paths — hold under, tack-now over
+  const alpha = parseFloat(css("--path-alpha")) || 0.08;
+  if (results) {
+    for (const [paths, color] of [[results.pathsB, css("--hold")], [results.pathsA, css("--tack")]]) {
+      ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = 1.1;
+      for (const p of paths) {
+        ctx.beginPath(); ctx.moveTo(T.X(p[0]), T.Y(p[1]));
+        for (let j = 2; j < p.length; j += 2) ctx.lineTo(T.X(p[j]), T.Y(p[j + 1]));
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // mark: red buoy with a 2px surface ring
+  ctx.beginPath(); ctx.arc(T.X(MARK.x), T.Y(MARK.y), 8, 0, 7);
+  ctx.fillStyle = css("--mark"); ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = css("--panel"); ctx.stroke();
+  ctx.fillStyle = css("--ink-2"); ctx.font = "11px " + '"Avenir Next", sans-serif';
+  ctx.fillText("TOP MARK", T.X(MARK.x) + 13, T.Y(MARK.y) + 4);
+
+  // boat + current heading tick
+  const bx = T.X(boatPos.x), by = T.Y(boatPos.y);
+  const hdg = headingFor(boatTack, params().cur, P.twa || 43) * DEG;
+  ctx.strokeStyle = css("--ink"); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(bx, by);
+  ctx.lineTo(bx + 22 * Math.sin(hdg), by - 22 * Math.cos(hdg)); ctx.stroke();
+  ctx.beginPath(); ctx.arc(bx, by, 5.5, 0, 7);
+  ctx.fillStyle = css("--ink"); ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = css("--panel"); ctx.stroke();
+
+  drawWindRose(ctx, w);
+  // scale bar: 200 m
+  const sb = 200 * T.s;
+  ctx.strokeStyle = css("--ink-3"); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(w - 20 - sb, h - 18); ctx.lineTo(w - 20, h - 18); ctx.stroke();
+  ctx.fillStyle = css("--ink-3"); ctx.font = "10.5px " + '"Avenir Next", sans-serif';
+  ctx.textAlign = "right"; ctx.fillText("200 m", w - 20, h - 25); ctx.textAlign = "left";
+}
+
+function drawWindRose(ctx, w) {
+  const P = params();
+  const cx = w - 52, cy = 56, R = 26;
+  ctx.strokeStyle = css("--line"); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.stroke();
+  // oscillation fan around the mean
+  ctx.fillStyle = css("--accent-soft");
+  ctx.beginPath(); ctx.moveTo(cx, cy);
+  ctx.arc(cx, cy, R, (P.mean - P.amp - 90) * DEG, (P.mean + P.amp - 90) * DEG); ctx.fill();
+  // current-wind arrow (blowing inward from its direction)
+  const a = P.cur * DEG;
+  const tipx = cx + (R - 21) * Math.sin(a), tipy = cy - (R - 21) * Math.cos(a);
+  ctx.strokeStyle = css("--ink"); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(cx + R * Math.sin(a), cy - R * Math.cos(a)); ctx.lineTo(tipx, tipy); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(tipx, tipy);
+  ctx.lineTo(tipx + 5 * Math.sin(a + 150 * DEG), tipy - 5 * Math.cos(a + 150 * DEG));
+  ctx.lineTo(tipx + 5 * Math.sin(a - 150 * DEG), tipy - 5 * Math.cos(a - 150 * DEG));
+  ctx.closePath(); ctx.fillStyle = css("--ink"); ctx.fill();
+  ctx.fillStyle = css("--ink-2"); ctx.font = "10.5px ui-monospace, Menlo, monospace";
+  ctx.textAlign = "center"; ctx.fillText("TWD " + fmtDeg(P.cur), cx, cy + R + 14); ctx.textAlign = "left";
+}
+
+/* ================= wind strip chart ================= */
+const STRIP_T0 = -600, STRIP_T1 = 1560;
+
+function pastWind(P) {
+  // one deterministic backwards trace consistent with (cur, mean, trend, osc)
+  const pts = [];
+  const clamped = Math.max(-1, Math.min(1, P.amp > 0.01 ? (P.cur - P.mean) / P.amp : 0));
+  const phase = Math.asin(clamped);
+  for (let t = STRIP_T0; t <= 0; t += 10) {
+    const v = P.amp > 0.01
+      ? P.mean + P.trend * t + P.amp * Math.sin(2 * Math.PI * t / P.period + phase)
+      : P.cur + P.trend * t;
+    pts.push([t, v]);
+  }
+  pts[pts.length - 1][1] = P.cur;
+  return pts;
+}
+let pastedWind = null;   // [[t(<=0), twd], ...] if the user pasted data
+
+function drawStrip() {
+  const { ctx, w, h } = fitCanvas(stripC);
+  ctx.clearRect(0, 0, w, h);
+  const P = results ? results.P : params();
+  const past = pastedWind || pastWind(P);
+  const padL = 46, padR = 12, padT = 26, padB = 22;
+
+  let lo = Infinity, hi = -Infinity;
+  const scan = v => { if (v < lo) lo = v; if (v > hi) hi = v; };
+  past.forEach(p => scan(p[1]));
+  if (results) results.winds.forEach(tr => tr.forEach(scan));
+  scan(P.mean - P.amp); scan(P.mean + P.amp);
+  lo -= 3; hi += 3;
+
+  const X = t => padL + (t - STRIP_T0) / (STRIP_T1 - STRIP_T0) * (w - padL - padR);
+  const Y = v => padT + (hi - v) / (hi - lo) * (h - padT - padB);
+
+  // y grid + labels
+  const stepY = (hi - lo) > 30 ? 10 : 5;
+  ctx.font = "10.5px ui-monospace, Menlo, monospace"; ctx.fillStyle = css("--ink-3");
+  ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+  for (let v = Math.ceil(lo / stepY) * stepY; v <= hi; v += stepY) {
+    ctx.beginPath(); ctx.moveTo(padL, Y(v)); ctx.lineTo(w - padR, Y(v)); ctx.stroke();
+    ctx.fillText(fmtDeg(v), 8, Y(v) + 3.5);
+  }
+  // x ticks every 5 min
+  ctx.textAlign = "center";
+  for (let t = -600; t <= STRIP_T1; t += 300) {
+    ctx.fillText(t === 0 ? "now" : (t > 0 ? "+" : "") + t / 60 + "m", X(t), h - 7);
+  }
+  ctx.textAlign = "left";
+
+  // mean-wind reference
+  ctx.setLineDash([4, 5]); ctx.strokeStyle = css("--ink-3"); ctx.globalAlpha = 0.6;
+  ctx.beginPath(); ctx.moveTo(padL, Y(P.mean)); ctx.lineTo(w - padR, Y(P.mean)); ctx.stroke();
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+
+  // "now" divider
+  ctx.strokeStyle = css("--line"); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(X(0), padT - 6); ctx.lineTo(X(0), h - padB); ctx.stroke();
+
+  // simulated futures — faded ink
+  if (results) {
+    ctx.strokeStyle = css("--ink"); ctx.globalAlpha = 0.07; ctx.lineWidth = 1;
+    for (const tr of results.winds) {
+      ctx.beginPath(); ctx.moveTo(X(0), Y(P.cur));
+      tr.forEach((v, i) => ctx.lineTo(X((i + 1) * 16), Y(v)));
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // past — solid ink
+  ctx.strokeStyle = css("--ink"); ctx.lineWidth = 2;
+  ctx.beginPath();
+  past.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])));
+  ctx.stroke();
+
+  stripC._map = { X, Y, lo, hi, padL, padR, past, P };
+}
+
+/* strip crosshair */
+stripC.addEventListener("mousemove", e => {
+  const m = stripC._map; if (!m) return;
+  const r = stripC.getBoundingClientRect();
+  const t = STRIP_T0 + (e.clientX - r.left - m.padL) / (r.width - m.padL - m.padR) * (STRIP_T1 - STRIP_T0);
+  const tip = $("tip");
+  if (t < STRIP_T0 || t > STRIP_T1) { tip.style.display = "none"; return; }
+  let v;
+  if (t <= 0) { const p = m.past.reduce((a, b) => Math.abs(b[0] - t) < Math.abs(a[0] - t) ? b : a); v = p[1]; }
+  else v = m.P.mean + m.P.trend * t;   // expected future
+  tip.style.display = "block";
+  tip.textContent = (t <= 0 ? "" : "≈") + fmtDeg(v) + " · " + (t >= 0 ? "+" : "−") + Math.abs(t / 60).toFixed(1) + " min";
+  tip.style.left = Math.min(e.clientX - r.left + 12, r.width - 130) + "px";
+  tip.style.top = "28px";
+});
+stripC.addEventListener("mouseleave", () => $("tip").style.display = "none");
+
+/* ================= interactions ================= */
+courseC.addEventListener("click", e => {
+  const r = courseC.getBoundingClientRect();
+  const T = courseTransform(r.width, r.height);
+  const x = T.invX(e.clientX - r.left), y = T.invY(e.clientY - r.top);
+  boatPos = {
+    x: Math.max(WORLD.x0 + 20, Math.min(WORLD.x1 - 20, x)),
+    y: Math.max(WORLD.y0 + 20, Math.min(MARK.y - 120, y)),
+  };
+  schedule();
+});
+
+$("tackSeg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  boatTack = b.dataset.tack;
+  document.querySelectorAll("#tackSeg button").forEach(x => x.classList.toggle("on", x === b));
+  schedule();
+});
+
+$("reroll").addEventListener("click", () => { seed = (seed * 1664525 + 1013904223) >>> 0; schedule(); });
+
+const PRESETS = {
+  osc:     { amp: 10, period: 5, trend: 0, sigma: 4, tau: 90, thr: 6, cur: 8, mean: 0, lay: 2, laysig: 3 },
+  persist: { amp: 4, period: 8, trend: 1.5, sigma: 3, tau: 240, thr: 6, cur: 6, mean: 0, lay: 2, laysig: 3 },
+  chaos:   { amp: 3, period: 4, trend: 0, sigma: 10, tau: 60, thr: 8, cur: 5, mean: 0, lay: 4, laysig: 5 },
+};
+document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => {
+  const p = PRESETS[b.dataset.preset];
+  for (const k in p) { $("p_" + k).value = p[k]; }
+  refreshOutputs(); schedule();
+}));
+
+$("fitBtn").addEventListener("click", () => {
+  const rows = $("windData").value.trim().split(/\n+/)
+    .map(l => l.split(/[,\s]+/).map(Number)).filter(r => r.length >= 2 && r.every(isFinite));
+  if (rows.length < 3) { $("fitNote").textContent = "Need ≥ 3 rows of “seconds,TWD”."; return; }
+  // unwrap directions so 359 -> 001 doesn't jump
+  for (let i = 1; i < rows.length; i++) rows[i][1] = rows[i - 1][1] + normAng(rows[i][1] - rows[i - 1][1]);
+  const tEnd = rows[rows.length - 1][0];
+  const ts = rows.map(r => (r[0] - tEnd) / 60), vs = rows.map(r => r[1]);   // minutes before now
+  const n = rows.length, mt = ts.reduce((a, b) => a + b) / n, mv = vs.reduce((a, b) => a + b) / n;
+  let sxy = 0, sxx = 0;
+  for (let i = 0; i < n; i++) { sxy += (ts[i] - mt) * (vs[i] - mv); sxx += (ts[i] - mt) ** 2; }
+  const slope = sxx > 0 ? sxy / sxx : 0;                    // deg per minute
+  const nowVal = mv + slope * (0 - mt);
+  const resid = vs.map((v, i) => v - (mv + slope * (ts[i] - mt)));
+  const rstd = Math.sqrt(resid.reduce((a, r) => a + r * r, 0) / Math.max(1, n - 2));
+  const set = (id, v, min, max) => $("p_" + id).value = Math.max(min, Math.min(max, v));
+  const anchor = Math.round(nowVal);                         // fold mean/cur around 0 for the sliders
+  set("cur", Math.round(rows[rows.length - 1][1] - anchor + normAng(nowVal)), -40, 40);
+  set("mean", Math.round(normAng(nowVal)), -40, 40);
+  set("trend", Math.round(slope * 10) / 10, -3, 3);
+  set("amp", Math.round(rstd * 1.4), 0, 25);
+  set("sigma", Math.round(rstd * 0.8 * 2) / 2, 0, 12);
+  pastedWind = rows.map(r => [r[0] - tEnd, normAng(r[1] - anchor) + normAng(nowVal)]);
+  $("fitNote").textContent = "Fitted: trend " + (slope >= 0 ? "+" : "") + slope.toFixed(1) +
+    "°/min · swing ±" + (rstd * 1.4).toFixed(0) + "° · " + n + " samples (directions re-centred near 0)";
+  refreshOutputs(); schedule();
+});
+
+/* ================= wiring ================= */
+function refreshOutputs() {
+  for (const k in sliders) $("o_" + k).textContent = sliders[k].unit($("p_" + k).value);
+}
+let timer = null;
+function schedule() { refreshOutputs(); drawAll(); clearTimeout(timer); timer = setTimeout(run, 160); }
+function drawAll() { drawCourse(); drawStrip(); }
+
+for (const k in sliders) $("p_" + k).addEventListener("input", () => {
+  if (k !== "cur" && k !== "mean" && k !== "trend") pastedWind = pastedWind; else pastedWind = null;
+  schedule();
+});
+
+new ResizeObserver(drawAll).observe(courseC.parentElement);
+new ResizeObserver(drawAll).observe(stripC.parentElement);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { drawAll(); updateStats(); });
+new MutationObserver(() => { drawAll(); updateStats(); })
+  .observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+refreshOutputs();
+run();
+</script>

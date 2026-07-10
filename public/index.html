@@ -1,0 +1,923 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Tack Advisor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --surface: #F4F6F7; --panel: #FFFFFF; --ink: #16232B; --ink-2: #51626D;
+    --ink-3: #8A99A3; --line: #DDE4E8; --tack: #0793B3; --hold: #B45D0E;
+    --mark: #C4453B; --grid: rgba(22,35,43,0.06); --path-alpha: 0.07;
+    --accent-soft: rgba(7,147,179,0.10); --good: #2E7D4F; --warn: #B45D0E;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface: #0E151B; --panel: #151F27; --ink: #E3ECF1; --ink-2: #9FB1BB;
+      --ink-3: #64767F; --line: #24313A; --tack: #1595AC; --hold: #C8802F;
+      --mark: #D4574C; --grid: rgba(227,236,241,0.06); --path-alpha: 0.09;
+      --accent-soft: rgba(21,149,172,0.14); --good: #3FA46C; --warn: #C8802F;
+    }
+  }
+  :root[data-theme="dark"] {
+    --surface: #0E151B; --panel: #151F27; --ink: #E3ECF1; --ink-2: #9FB1BB;
+    --ink-3: #64767F; --line: #24313A; --tack: #1595AC; --hold: #C8802F;
+    --mark: #D4574C; --grid: rgba(227,236,241,0.06); --path-alpha: 0.09;
+    --accent-soft: rgba(21,149,172,0.14); --good: #3FA46C; --warn: #C8802F;
+  }
+  :root[data-theme="light"] {
+    --surface: #F4F6F7; --panel: #FFFFFF; --ink: #16232B; --ink-2: #51626D;
+    --ink-3: #8A99A3; --line: #DDE4E8; --tack: #0793B3; --hold: #B45D0E;
+    --mark: #C4453B; --grid: rgba(22,35,43,0.06); --path-alpha: 0.07;
+    --accent-soft: rgba(7,147,179,0.10); --good: #2E7D4F; --warn: #B45D0E;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface); color: var(--ink);
+    font: 14px/1.45 "Avenir Next", "Avenir", -apple-system, "Segoe UI", sans-serif;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+
+  .app { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100vh; }
+  @media (max-width: 900px) { .app { height: auto; min-height: 100vh; } }
+
+  /* ---------- instrument bar ---------- */
+  header {
+    display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+    padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  .verdict { display: flex; align-items: baseline; gap: 14px; min-width: 320px; }
+  #winPct {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums;
+    font-size: 50px; font-weight: 700; line-height: 1; letter-spacing: -1px;
+  }
+  #verdictText { font-size: 16px; font-weight: 600; }
+  #verdictSub { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+  .gauges { display: flex; gap: 4px; margin-left: auto; }
+  .gauge {
+    border: 1px solid var(--line); border-left: none; padding: 6px 14px 5px; text-align: center; background: var(--surface);
+  }
+  .gauge:first-child { border-left: 1px solid var(--line); border-radius: 8px 0 0 8px; }
+  .gauge:last-child { border-radius: 0 8px 8px 0; }
+  .gauge .lbl { font-size: 9.5px; letter-spacing: 0.12em; color: var(--ink-3); text-transform: uppercase; }
+  .gauge .val { font-size: 21px; font-weight: 600; font-family: ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+  .gauge .unit { font-size: 10px; color: var(--ink-3); }
+  #srcBadge {
+    display: flex; align-items: center; gap: 6px; border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 12px; font-size: 11px; letter-spacing: 0.08em;
+    color: var(--ink-2); text-transform: uppercase;
+  }
+  #srcBadge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+  #srcBadge.demo .dot { background: var(--warn); }
+  #srcBadge.stale .dot { background: var(--mark); }
+
+  /* ---------- layout ---------- */
+  main { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: 0; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  aside {
+    border-right: 1px solid var(--line); background: var(--panel);
+    padding: 12px 14px 24px; overflow-y: auto; min-height: 0;
+  }
+  @media (max-width: 900px) { aside { border-right: none; border-bottom: 1px solid var(--line); } }
+
+  .card2 { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; background: var(--surface); }
+  .card2 h3 {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--ink-3); margin: 0 0 7px; font-weight: 600;
+  }
+  .kv { display: flex; justify-content: space-between; font-size: 12.5px; padding: 1.5px 0; color: var(--ink-2); }
+  .kv b { color: var(--ink); font-weight: 600; font-family: ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+  .note { font-size: 11px; color: var(--ink-3); margin-top: 6px; line-height: 1.4; }
+  .btnrow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  button {
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  button:hover { border-color: var(--tack); }
+  .legend { display: flex; gap: 12px; font-size: 12px; color: var(--ink-2); margin: 2px 0 10px; }
+  .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 5px; vertical-align: -1px; }
+  .sw.tack { background: var(--tack); } .sw.hold { background: var(--hold); }
+
+  /* ---------- canvases ---------- */
+  .viz { display: grid; grid-template-rows: minmax(0, 1fr) 178px; min-height: 0; padding: 10px 12px 12px; gap: 10px; }
+  @media (max-width: 900px) { .viz { grid-template-rows: 62vh 178px; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; position: relative; overflow: hidden; min-height: 0; }
+  .card .cap {
+    position: absolute; top: 8px; left: 13px; font-size: 10.5px; letter-spacing: 0.09em;
+    text-transform: uppercase; color: var(--ink-3); pointer-events: none; z-index: 2;
+  }
+  .card .hint { position: absolute; bottom: 7px; left: 13px; font-size: 11px; color: var(--ink-3); pointer-events: none; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #course { cursor: crosshair; }
+  #tip {
+    position: absolute; pointer-events: none; display: none; z-index: 3;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    padding: 3px 8px; font-size: 11.5px; color: var(--ink); box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  }
+  #status { position: absolute; top: 8px; right: 13px; font-size: 11px; color: var(--ink-3); }
+</style>
+
+<div class="app">
+<header>
+  <div class="verdict">
+    <div id="winPct" class="mono">—</div>
+    <div>
+      <div id="verdictText">Waiting for data…</div>
+      <div id="verdictSub"></div>
+    </div>
+  </div>
+  <div class="gauges">
+    <div class="gauge"><div class="lbl">TWD</div><div class="val" id="gTwd">—</div><div class="unit">°true</div></div>
+    <div class="gauge"><div class="lbl">TWS</div><div class="val" id="gTws">—</div><div class="unit">kn</div></div>
+    <div class="gauge"><div class="lbl">HDG</div><div class="val" id="gHdg">—</div><div class="unit">°true</div></div>
+    <div class="gauge"><div class="lbl">SOG</div><div class="val" id="gSog">—</div><div class="unit">kn</div></div>
+    <div class="gauge"><div class="lbl">Tack</div><div class="val" id="gTack">—</div><div class="unit">&nbsp;</div></div>
+  </div>
+  <div id="srcBadge"><span class="dot"></span><span id="srcText">connecting</span></div>
+</header>
+
+<main>
+<aside>
+  <div class="legend">
+    <span><span class="sw tack"></span>Tack now</span>
+    <span><span class="sw hold"></span>Hold</span>
+  </div>
+
+  <div class="card2">
+    <h3>Decision</h3>
+    <div class="kv"><span>Median gain</span><b id="medGain">—</b></div>
+    <div class="kv"><span>Tacks (tack / hold)</span><b id="tackCounts">—</b></div>
+    <div class="kv"><span>Simulations</span><b id="simCount">—</b></div>
+    <div class="btnrow"><button id="reroll">↻ Re-roll futures</button></div>
+  </div>
+
+  <div class="card2">
+    <h3>Wind model <span id="fitSrc"></span></h3>
+    <div class="kv"><span>Mean TWD</span><b id="fMean">—</b></div>
+    <div class="kv"><span>Trend</span><b id="fTrend">—</b></div>
+    <div class="kv"><span>Oscillation</span><b id="fOsc">—</b></div>
+    <div class="kv"><span>Noise σ</span><b id="fSigma">—</b></div>
+    <div class="kv"><span>Persistence τ</span><b id="fTau">—</b></div>
+    <div class="btnrow"><button id="refit">Fit now</button></div>
+    <div class="note" id="fitNote"></div>
+  </div>
+
+  <div class="card2">
+    <h3>Next mark</h3>
+    <div class="kv"><span>Source</span><b id="mSrc">—</b></div>
+    <div class="kv"><span>Bearing / range</span><b id="mBrg">—</b></div>
+    <div class="btnrow"><button id="clearMark">Clear manual mark</button></div>
+    <div class="note">Tap the chart to set a manual mark. Without one, the Signal K course destination is used.</div>
+  </div>
+
+  <div class="card2">
+    <h3>Race model</h3>
+    <div class="kv"><span>TWA / tack cost</span><b id="rBoat">—</b></div>
+    <div class="kv"><span>Header threshold</span><b id="rThr">—</b></div>
+    <div class="kv"><span>Commit / margin</span><b id="rCommit">—</b></div>
+    <div class="kv"><span>Layline judgment σ</span><b id="rLaySig">—</b></div>
+    <div class="note">Edit in Signal K admin → Server → Plugin Config → Tack Advisor.</div>
+  </div>
+</aside>
+
+<div class="viz">
+  <div class="card">
+    <div class="cap">Course — simulated routes to the mark</div>
+    <div id="status"></div>
+    <canvas id="course"></canvas>
+    <div class="hint">Solid line: your track · tap to set a manual mark</div>
+  </div>
+  <div class="card">
+    <div class="cap">True wind direction — recorded · simulated futures</div>
+    <canvas id="strip"></canvas>
+    <div id="tip" class="mono"></div>
+  </div>
+</div>
+</main>
+</div>
+
+<script>
+"use strict";
+/* ================= utilities ================= */
+const $ = id => document.getElementById(id);
+const DEG = Math.PI / 180;
+const KTS = 0.514444;
+const API = "/plugins/signalk-tack-advisor";
+const normAng = a => ((a + 180) % 360 + 360) % 360 - 180;
+const norm360 = d => ((d % 360) + 360) % 360;
+const fmtDeg = d => String(Math.round(norm360(d))).padStart(3, "0") + "°";
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function gauss(rng) {
+  let u = 0, v = 0;
+  while (u === 0) u = rng(); while (v === 0) v = rng();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/* geo: local tangent-plane metres around a reference lat/lon */
+function projector(lat0, lon0) {
+  const mLat = 111320, mLon = 111320 * Math.cos(lat0 * DEG);
+  return {
+    toXY: (lat, lon) => ({ x: (lon - lon0) * mLon, y: (lat - lat0) * mLat }),
+    toLL: (x, y) => ({ latitude: lat0 + y / mLat, longitude: lon0 + x / mLon }),
+  };
+}
+
+/* ================= app state ================= */
+let demoMode = false;
+let state = null;              // /state payload (or demo equivalent)
+let windHist = [];             // [tMs, twdDeg]
+let trackHist = [];            // [tMs, lat, lon]
+let fit = null;                // fitted wind model
+let settings = null;
+let MARK = { x: 0, y: 850 };   // metres, boat at origin
+let markIsGhost = true;
+let boatPos = { x: 0, y: 0 };
+let boatTack = "port";
+let seed = 20260710;
+let results = null;
+
+/* ================= sim core (validated in the playground) ================= */
+const DT = 2, MARK_R = 15;
+
+function headingFor(tack, twd, twa) { return tack === "port" ? twd + twa : twd - twa; }
+function makeBoat(tack) {
+  return { x: boatPos.x, y: boatPos.y, tack, freeze: 0, lastTack: -1e9, done: false, time: 0, tacks: 0, prevDist: 1e9 };
+}
+function doTack(b, t, P) { b.tack = b.tack === "port" ? "stbd" : "port"; b.freeze = P.cost; b.lastTack = t; b.tacks++; }
+
+function policy(b, twd, t, P) {
+  // Laylines are called on the expected wind (mean + trend), not the gust of the
+  // moment. Margin > 0 tacks past the line (insurance); the per-race judgment
+  // error (b.layErr) disperses over- and under-standers.
+  if (Math.hypot(MARK.x - b.x, MARK.y - b.y) > 30 && t - b.lastTack >= 8) {
+    const bear = Math.atan2(MARK.x - b.x, MARK.y - b.y) / DEG;
+    const judgeW = P.mean + P.trend * t;
+    const other = headingFor(b.tack === "port" ? "stbd" : "port", judgeW, P.twa);
+    const d = normAng(bear - other);
+    const m = P.lay + (b.layErr || 0);
+    if ((b.tack === "port" && d <= -m) || (b.tack === "stbd" && d >= m)) return true;
+  }
+  if (t - b.lastTack < P.commit) return false;
+  const shift = normAng(twd - (P.mean + P.trend * t));
+  return (b.tack === "port" && shift > P.thr) || (b.tack === "stbd" && shift < -P.thr);
+}
+
+function stepBoat(b, twd, t, P, path) {
+  if (b.done) return;
+  if (b.freeze > 0) { b.freeze -= DT; if (path) path.push(b.x, b.y); return; }
+  // free leg: if the mark can be laid without pinching, steer straight at it
+  const bear = Math.atan2(MARK.x - b.x, MARK.y - b.y) / DEG;
+  const rel = normAng(bear - twd);
+  const canFetch = b.tack === "port" ? rel >= P.twa : rel <= -P.twa;
+  if (!canFetch && policy(b, twd, t, P)) { doTack(b, t, P); if (path) path.push(b.x, b.y); return; }
+  const h = (canFetch ? bear : headingFor(b.tack, twd, P.twa)) * DEG;
+  b.x += P.spd * Math.sin(h) * DT;
+  b.y += P.spd * Math.cos(h) * DT;
+  if (path) path.push(b.x, b.y);
+  const dist = Math.hypot(MARK.x - b.x, MARK.y - b.y);
+  if (dist < MARK_R) {
+    const f = b.prevDist > MARK_R ? (b.prevDist - MARK_R) / Math.max(1e-6, b.prevDist - dist) : 1;
+    b.done = true; b.time = t - DT + DT * Math.min(1, f);
+  } else {
+    // overshot the mark upwind (projected on the mean-wind axis) — miss penalty backstop
+    const up = (b.x - MARK.x) * Math.sin(P.mean * DEG) + (b.y - MARK.y) * Math.cos(P.mean * DEG);
+    if (up > 40) { b.done = true; b.time = t + 2 * dist / P.spd; }
+  }
+  b.prevDist = dist;
+}
+
+function simulateOne(rng, P, recordPath, recordWind) {
+  const off = P.amp > 0.01 ? clamp((P.cur - P.mean) / P.amp, -1, 1) : 0;
+  let phase = Math.asin(off);
+  if (rng() < 0.5) phase = Math.PI - phase;
+  phase += 0.6 * gauss(rng);
+  let dev = P.cur - (P.mean + P.amp * Math.sin(phase));
+  const A = makeBoat(boatTack), B = makeBoat(boatTack);
+  A.layErr = B.layErr = P.laySig * gauss(rng);
+  doTack(A, 0, P); A.lastTack = 0;
+  B.lastTack = 0;
+  const pathA = recordPath ? [A.x, A.y] : null, pathB = recordPath ? [B.x, B.y] : null;
+  const windTrace = recordWind ? [] : null;
+  for (let t = DT; t <= P.maxT; t += DT) {
+    dev += -dev * (DT / P.tau) + P.sigma * Math.sqrt(DT / 60) * gauss(rng);
+    const twd = P.mean + P.trend * t + P.amp * Math.sin(2 * Math.PI * t / P.period + phase) + dev;
+    stepBoat(A, twd, t, P, pathA);
+    stepBoat(B, twd, t, P, pathB);
+    if (windTrace && (t / DT) % 8 === 0 && t <= P.horizon) windTrace.push(twd);
+    if (A.done && B.done) break;
+  }
+  const finish = b => b.done ? b.time : P.maxT + Math.hypot(MARK.x - b.x, MARK.y - b.y);
+  return { tA: finish(A), tB: finish(B), tacksA: A.tacks, tacksB: B.tacks, pathA, pathB, windTrace };
+}
+
+/* ================= parameters from fit + settings ================= */
+function params() {
+  const s = settings, w = effectiveWind();
+  if (!s || !w) return null;
+  const spdKn = (s.boat.useLiveSpeed && state && state.sogKn > 1.5) ? state.sogKn : s.boat.upwindSpeedKnots;
+  const spd = spdKn * KTS;
+  const dist = Math.hypot(MARK.x - boatPos.x, MARK.y - boatPos.y);
+  const eta = dist / Math.max(0.5, spd * Math.cos(s.boat.twa * DEG));
+  return {
+    cur: w.cur, mean: w.mean, amp: w.amp, period: w.period, trend: w.trend / 60,
+    sigma: w.sigma, tau: w.tau,
+    spd, twa: s.boat.twa, cost: s.boat.tackCostSeconds,
+    thr: s.tactics.headerThresholdDeg, commit: s.tactics.commitSeconds,
+    lay: s.tactics.laylineMarginDeg, laySig: s.tactics.laylineJudgmentSigmaDeg,
+    n: s.simulation.simulations, pathsShown: s.simulation.pathsDrawn,
+    maxT: clamp(3 * eta, 900, 3600), horizon: clamp(1.6 * eta, 480, 1800),
+  };
+}
+
+function effectiveWind() {
+  const o = settings && settings.windOverride;
+  if (o && o.enabled && fit) {
+    return { cur: fit.cur, mean: fit.mean, amp: o.oscAmplitudeDeg, period: o.oscPeriodMinutes * 60,
+             trend: o.trendDegPerMinute, sigma: o.noiseSigma, tau: o.persistenceTauSeconds, source: "override" };
+  }
+  return fit;
+}
+
+/* ================= wind model fit ================= */
+function fitWind(hist, windowMin, tauDefault) {
+  const now = Date.now();
+  const rows = hist.filter(r => r[0] >= now - windowMin * 60e3);
+  if (rows.length < 45) return null;
+  // unwrap so 359 -> 001 doesn't jump
+  const t = [], v = [];
+  let prev = rows[0][1];
+  for (const r of rows) {
+    prev = prev + normAng(r[1] - prev);
+    t.push((r[0] - now) / 60e3);      // minutes before now (negative)
+    v.push(prev);
+  }
+  const n = t.length, mt = t.reduce((a, b) => a + b) / n, mv = v.reduce((a, b) => a + b) / n;
+  let sxy = 0, sxx = 0;
+  for (let i = 0; i < n; i++) { sxy += (t[i] - mt) * (v[i] - mv); sxx += (t[i] - mt) ** 2; }
+  const trend = sxx > 0 ? sxy / sxx : 0;                 // deg/min
+  const meanNow = mv + trend * (0 - mt);
+  const resid = v.map((x, i) => x - (mv + trend * (t[i] - mt)));
+  // split residual into oscillation (smoothed) and fast noise
+  const k = 10;                                           // ~20 s smoothing at 2 s samples
+  const smooth = resid.map((_, i) => {
+    let s = 0, c = 0;
+    for (let j = Math.max(0, i - k); j <= Math.min(n - 1, i + k); j++) { s += resid[j]; c++; }
+    return s / c;
+  });
+  const std = a => { const m = a.reduce((x, y) => x + y) / a.length; return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length); };
+  const amp = clamp(1.35 * std(smooth), 0, 30);
+  const noise = resid.map((r, i) => r - smooth[i]);
+  const dtMin = n > 1 ? (t[n - 1] - t[0]) / (n - 1) : 1 / 30;
+  const diffs = [];
+  for (let i = 1; i < n; i++) diffs.push(noise[i] - noise[i - 1]);
+  const sigma = clamp(std(diffs) / Math.sqrt(Math.max(1e-4, dtMin)), 0.5, 15);
+  // period from zero crossings of the smoothed residual
+  const crossings = [];
+  for (let i = 1; i < n; i++) if ((smooth[i - 1] < 0) !== (smooth[i] < 0)) crossings.push(t[i]);
+  let period = 360;
+  if (crossings.length >= 3) {
+    const gaps = [];
+    for (let i = 1; i < crossings.length; i++) gaps.push(crossings[i] - crossings[i - 1]);
+    gaps.sort((a, b) => a - b);
+    period = clamp(2 * gaps[gaps.length >> 1] * 60, 120, 1500);
+  }
+  const tail = v.slice(-8);
+  const cur = tail.reduce((a, b) => a + b) / tail.length;
+  return {
+    cur: norm360(cur), mean: norm360(cur + normAng(meanNow - cur)),
+    trend, amp, period, sigma, tau: tauDefault,
+    windowUsed: Math.round((t[n - 1] - t[0])), samples: n, source: "fit",
+  };
+}
+
+/* ================= data layer ================= */
+async function fetchJson(url, opts) {
+  const r = await fetch(url, opts);
+  if (!r.ok) throw new Error(url + " → " + r.status);
+  return r.json();
+}
+
+async function loadState() {
+  if (demoMode) { state = demo.state(); applyState(); return; }
+  if (location.protocol === "file:") { enterDemo(); return; }
+  try {
+    state = await fetchJson(API + "/state");
+    applyState();
+  } catch (e) {
+    if (!state) { enterDemo(); } else { setBadge("stale", "no server"); }
+  }
+}
+async function loadHistory() {
+  if (demoMode) { const h = demo.history(); windHist = h.wind; trackHist = h.track; return; }
+  try {
+    const h = await fetchJson(API + "/history");
+    windHist = h.wind || []; trackHist = h.track || [];
+  } catch (e) { /* keep previous */ }
+}
+
+function enterDemo() {
+  demoMode = true;
+  demo.init();
+  state = demo.state();
+  settings = demo.settings;
+  const h = demo.history(); windHist = h.wind; trackHist = h.track;
+  applyState();
+}
+
+function applyState() {
+  if (!state) return;
+  if (state.settings) settings = state.settings;
+  setBadge(demoMode ? "demo" : (state.twdDeg == null || !state.position ? "stale" : "live"),
+           demoMode ? "demo data" : (state.twdDeg == null || !state.position ? "waiting for data" : "live"));
+  // gauges
+  $("gTwd").textContent = state.twdDeg != null ? fmtDeg(state.twdDeg).replace("°", "") : "—";
+  $("gTws").textContent = state.twsKn != null ? state.twsKn.toFixed(1) : "—";
+  $("gHdg").textContent = state.headingDeg != null ? fmtDeg(state.headingDeg).replace("°", "") : "—";
+  $("gSog").textContent = state.sogKn != null ? state.sogKn.toFixed(1) : "—";
+  // tack from wind side
+  if (state.twdDeg != null && state.headingDeg != null) {
+    boatTack = normAng(state.twdDeg - state.headingDeg) >= 0 ? "stbd" : "port";
+    $("gTack").textContent = boatTack === "port" ? "PORT" : "STBD";
+  } else $("gTack").textContent = "—";
+  refreshGeometry();
+}
+
+function refreshGeometry() {
+  if (!state || !state.position) return;
+  const proj = projector(state.position.latitude, state.position.longitude);
+  boatPos = { x: 0, y: 0 };
+  if (state.mark && state.mark.latitude != null) {
+    MARK = proj.toXY(state.mark.latitude, state.mark.longitude);
+    markIsGhost = false;
+  } else {
+    const w = effectiveWind();
+    const dir = (w ? w.mean : (state.twdDeg || 0)) * DEG;
+    MARK = { x: 850 * Math.sin(dir), y: 850 * Math.cos(dir) };   // ghost: 850 m upwind
+    markIsGhost = true;
+  }
+  state._proj = proj;
+}
+
+function setBadge(cls, text) {
+  const b = $("srcBadge");
+  b.className = ""; b.id = "srcBadge";
+  if (cls !== "live") b.classList.add(cls);
+  $("srcText").textContent = text;
+}
+
+/* ================= demo data source ================= */
+const demo = {
+  lat0: 41.377, lon0: -71.505,
+  rng: mulberry32(7),
+  wind: [], boat: null, track: [],
+  mark: null, t0: 0,
+  settings: JSON.parse(JSON.stringify({
+    fitWindowMinutes: 30,
+    boat: { twa: 43, tackCostSeconds: 6, upwindSpeedKnots: 6, useLiveSpeed: true },
+    tactics: { headerThresholdDeg: 6, commitSeconds: 60, laylineMarginDeg: 2, laylineJudgmentSigmaDeg: 3 },
+    simulation: { simulations: 600, pathsDrawn: 120 },
+    windOverride: { enabled: false },
+  })),
+  twdAt(tMs) { return this._twd; },
+  stepWind(toMs) {
+    // OU + oscillation, extended incrementally to toMs
+    while (this._wt < toMs) {
+      this._wt += 2000;
+      const t = (this._wt - this.t0) / 1000;
+      const target = 18 + 0.25 * (t / 60) + 7 * Math.sin(2 * Math.PI * t / 300);
+      this._dev += -(this._dev) * (2 / 120) + 3.5 * Math.sqrt(2 / 60) * gauss(this.rng);
+      this._twd = target + this._dev;
+      this.wind.push([this._wt, norm360(this._twd)]);
+      if (this.wind.length > 5400) this.wind.shift();
+    }
+  },
+  stepBoatTo(toMs) {
+    const proj = projector(this.lat0, this.lon0);
+    while (this._bt < toMs) {
+      this._bt += 2000;
+      const twd = this._twd;
+      const b = this.boat;
+      const mk = proj.toXY(this.mark.latitude, this.mark.longitude);
+      const bear = Math.atan2(mk.x - b.x, mk.y - b.y) / DEG;
+      const distM = Math.hypot(mk.x - b.x, mk.y - b.y);
+      if (distM < 60) { b.x = 250; b.y = -1450; b.tack = "port"; }  // restart the beat
+      // simple beating helm: tack on 7° headers or the layline
+      const shift = normAng(twd - 18);
+      const other = headingFor(b.tack === "port" ? "stbd" : "port", 18, 43);
+      const d = normAng(bear - other);
+      const layline = (b.tack === "port" && d <= -2) || (b.tack === "stbd" && d >= 2);
+      const header = (b.tack === "port" && shift > 7) || (b.tack === "stbd" && shift < -7);
+      if ((layline || header) && this._bt - b.lastTack > 45e3) { b.tack = b.tack === "port" ? "stbd" : "port"; b.lastTack = this._bt; }
+      const h = headingFor(b.tack, twd, 43) * DEG;
+      const spd = 6 * KTS;
+      b.x += spd * Math.sin(h) * 2; b.y += spd * Math.cos(h) * 2;
+      b.hdg = h / DEG;
+      const ll = proj.toLL(b.x, b.y);
+      this.track.push([this._bt, ll.latitude, ll.longitude]);
+      if (this.track.length > 5400) this.track.shift();
+    }
+  },
+  init() {
+    const now = Date.now();
+    this.t0 = now - 35 * 60e3;
+    this._wt = this.t0; this._twd = 18; this._dev = 0;
+    this.mark = projector(this.lat0, this.lon0).toLL(180, 1500);
+    this.mark = { latitude: this.mark.latitude, longitude: this.mark.longitude };
+    this.boat = { x: -150, y: -1500, tack: "port", lastTack: 0, hdg: 61 };
+    this._bt = now - 14 * 60e3;
+    this.stepWind(now);
+    this.stepBoatTo(now);
+  },
+  state() {
+    const now = Date.now();
+    this.stepWind(now); this.stepBoatTo(now);
+    const proj = projector(this.lat0, this.lon0);
+    const ll = proj.toLL(this.boat.x, this.boat.y);
+    return {
+      t: now, position: { latitude: ll.latitude, longitude: ll.longitude },
+      headingDeg: norm360(this.boat.hdg), sogKn: 6 + 0.4 * Math.sin(now / 9000),
+      twdDeg: norm360(this._twd), twsKn: 12.5 + 1.5 * Math.sin(now / 20000),
+      mark: this._manualMark || { ...this.mark, source: "course" },
+      settings: this.settings,
+    };
+  },
+  history() { return { wind: this.wind, track: this.track }; },
+};
+
+/* ================= run controller ================= */
+let runToken = 0;
+function run() {
+  const P = params();
+  if (!P) return;
+  const token = ++runToken;
+  const rng = mulberry32(seed);
+  const N = P.n, K = Math.min(P.pathsShown, N), W = Math.min(28, N);
+  const res = { wins: 0, diffs: [], tacksA: 0, tacksB: 0, pathsA: [], pathsB: [], winds: [], done: 0, N, P };
+  results = res;
+  $("status").textContent = "running…";
+  let i = 0;
+  (function chunk() {
+    if (token !== runToken) return;
+    const end = Math.min(i + 60, N);
+    for (; i < end; i++) {
+      const r = simulateOne(rng, P, i < K, i < W);
+      if (r.tA < r.tB - 0.5) res.wins++; else if (Math.abs(r.tA - r.tB) <= 0.5) res.wins += 0.5;
+      res.diffs.push(r.tB - r.tA);
+      res.tacksA += r.tacksA; res.tacksB += r.tacksB;
+      if (r.pathA) { res.pathsA.push(r.pathA); res.pathsB.push(r.pathB); }
+      if (r.windTrace) res.winds.push(r.windTrace);
+    }
+    res.done = i;
+    if (i < N) { drawAll(); setTimeout(chunk, 0); }
+    else { $("status").textContent = ""; drawAll(); updateStats(); }
+  })();
+}
+
+function updateStats() {
+  const r = results; if (!r || !r.done) return;
+  const pct = 100 * r.wins / r.done;
+  $("winPct").textContent = pct.toFixed(0) + "%";
+  $("winPct").style.color = pct >= 52 ? css("--tack") : pct <= 48 ? css("--hold") : css("--ink");
+  $("verdictText").textContent =
+    pct >= 52 ? "Tack now — wins " + pct.toFixed(0) + "% of futures"
+    : pct <= 48 ? "Hold — tacking wins only " + pct.toFixed(0) + "%"
+    : "Toss-up — sail your plan";
+  const shift = normAng(r.P.cur - r.P.mean);
+  const rel = boatTack === "port" ? shift : -shift;
+  const dist = Math.hypot(MARK.x - boatPos.x, MARK.y - boatPos.y);
+  $("verdictSub").textContent =
+    (boatTack === "port" ? "Port tack" : "Starboard tack") + " · " +
+    (rel > 1 ? "headed " + Math.abs(rel).toFixed(0) + "°" : rel < -1 ? "lifted " + Math.abs(rel).toFixed(0) + "°" : "on mean wind") +
+    " · mark " + (dist >= 1852 ? (dist / 1852).toFixed(1) + " nm" : Math.round(dist) + " m") +
+    (markIsGhost ? " (assumed upwind)" : "");
+  const d = [...r.diffs].sort((a, b) => a - b);
+  const med = d[Math.floor(d.length / 2)];
+  $("medGain").textContent = (med >= 0 ? "+" : "−") + Math.abs(med).toFixed(0) + " s";
+  $("tackCounts").textContent = (r.tacksA / r.done).toFixed(1) + " / " + (r.tacksB / r.done).toFixed(1);
+  $("simCount").textContent = r.done;
+}
+
+function updateCards() {
+  const w = effectiveWind();
+  $("fitSrc").textContent = w ? (w.source === "override" ? "· OVERRIDE" : "· fitted") : "";
+  if (w) {
+    $("fMean").textContent = fmtDeg(w.mean);
+    $("fTrend").textContent = (w.trend >= 0 ? "+" : "") + w.trend.toFixed(1) + "°/min";
+    $("fOsc").textContent = "±" + w.amp.toFixed(0) + "° / " + (w.period / 60).toFixed(1) + " min";
+    $("fSigma").textContent = w.sigma.toFixed(1) + "°/√min";
+    $("fTau").textContent = w.tau.toFixed(0) + " s";
+    $("fitNote").textContent = fit ? "Fitted over " + fit.windowUsed + " min · " + fit.samples + " samples" : "";
+  } else {
+    ["fMean", "fTrend", "fOsc", "fSigma", "fTau"].forEach(id => $(id).textContent = "—");
+    $("fitNote").textContent = "Not enough wind history yet (need ~2 min).";
+  }
+  const mark = state && state.mark;
+  $("mSrc").textContent = markIsGhost ? "none (assumed)" : (mark && mark.source === "manual" ? "manual" : "course dest");
+  const dist = Math.hypot(MARK.x - boatPos.x, MARK.y - boatPos.y);
+  const brg = norm360(Math.atan2(MARK.x - boatPos.x, MARK.y - boatPos.y) / DEG);
+  $("mBrg").textContent = fmtDeg(brg) + " / " + (dist >= 1852 ? (dist / 1852).toFixed(2) + " nm" : Math.round(dist) + " m");
+  if (settings) {
+    $("rBoat").textContent = settings.boat.twa + "° / " + settings.boat.tackCostSeconds + " s";
+    $("rThr").textContent = settings.tactics.headerThresholdDeg + "°";
+    $("rCommit").textContent = settings.tactics.commitSeconds + " s / " +
+      (settings.tactics.laylineMarginDeg > 0 ? "+" : "") + settings.tactics.laylineMarginDeg + "°";
+    $("rLaySig").textContent = "±" + settings.tactics.laylineJudgmentSigmaDeg + "°";
+  }
+}
+
+/* ================= course canvas ================= */
+const courseC = $("course"), stripC = $("strip");
+
+function fitCanvas(c) {
+  const dpr = window.devicePixelRatio || 1;
+  const r = c.getBoundingClientRect();
+  if (c.width !== Math.round(r.width * dpr) || c.height !== Math.round(r.height * dpr)) {
+    c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr);
+  }
+  const ctx = c.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w: r.width, h: r.height };
+}
+
+function trackXY(minutes) {
+  if (!state || !state._proj) return [];
+  const cutoff = Date.now() - minutes * 60e3;
+  return trackHist.filter(r => r[0] >= cutoff).map(r => state._proj.toXY(r[1], r[2]));
+}
+
+function courseTransform(w, h) {
+  const w0 = effectiveWind();
+  const meanDir = (w0 ? w0.mean : 0) * DEG;
+  const dist = Math.hypot(MARK.x, MARK.y);
+  // fit to the decision zone: boat, mark, layline cone, and only recent track —
+  // the older track still draws, it just may run off-canvas
+  const pts = [{ x: 0, y: 0 }, MARK,
+    { x: MARK.x + 0.55 * dist * Math.cos(meanDir), y: MARK.y - 0.55 * dist * Math.sin(meanDir) },
+    { x: MARK.x - 0.55 * dist * Math.cos(meanDir), y: MARK.y + 0.55 * dist * Math.sin(meanDir) }];
+  for (const p of trackXY(5)) pts.push(p);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const p of pts) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
+  const padX = 0.14 * (x1 - x0 + 200), padY = 0.14 * (y1 - y0 + 200);
+  x0 -= padX; x1 += padX; y0 -= padY; y1 += padY;
+  const s = Math.min(w / (x1 - x0), h / (y1 - y0));
+  const ox = (w - s * (x1 - x0)) / 2, oy = (h - s * (y1 - y0)) / 2;
+  return {
+    X: x => ox + (x - x0) * s,
+    Y: y => h - oy - (y - y0) * s,
+    invX: px => x0 + (px - ox) / s,
+    invY: py => y0 + (h - oy - py) / s,
+    s,
+  };
+}
+
+function drawCourse() {
+  const { ctx, w, h } = fitCanvas(courseC);
+  const T = courseTransform(w, h);
+  const P = results ? results.P : params();
+  ctx.clearRect(0, 0, w, h);
+  if (!P) return;
+
+  // grid every 250 m in world coords
+  ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+  const gx0 = Math.floor(T.invX(0) / 250) * 250, gx1 = T.invX(w);
+  for (let gx = gx0; gx <= gx1; gx += 250) { ctx.beginPath(); ctx.moveTo(T.X(gx), 0); ctx.lineTo(T.X(gx), h); ctx.stroke(); }
+  const gy1 = Math.ceil(T.invY(0) / 250) * 250, gy0 = T.invY(h);
+  for (let gy = Math.floor(gy0 / 250) * 250; gy <= gy1; gy += 250) { ctx.beginPath(); ctx.moveTo(0, T.Y(gy)); ctx.lineTo(w, T.Y(gy)); ctx.stroke(); }
+
+  // laylines from the mark (mean wind)
+  ctx.setLineDash([5, 5]); ctx.strokeStyle = css("--ink-3"); ctx.globalAlpha = 0.5;
+  for (const side of [-1, 1]) {
+    const a = (P.mean + 180 + side * P.twa) * DEG;
+    ctx.beginPath(); ctx.moveTo(T.X(MARK.x), T.Y(MARK.y));
+    const L = Math.hypot(MARK.x, MARK.y) * 1.6 + 300;
+    ctx.lineTo(T.X(MARK.x + L * Math.sin(a)), T.Y(MARK.y + L * Math.cos(a)));
+    ctx.stroke();
+  }
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+
+  // simulated paths — hold under, tack-now over
+  const alpha = parseFloat(css("--path-alpha")) || 0.08;
+  if (results) {
+    for (const [paths, color] of [[results.pathsB, css("--hold")], [results.pathsA, css("--tack")]]) {
+      ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = 1.1;
+      for (const p of paths) {
+        ctx.beginPath(); ctx.moveTo(T.X(p[0]), T.Y(p[1]));
+        for (let j = 2; j < p.length; j += 2) ctx.lineTo(T.X(p[j]), T.Y(p[j + 1]));
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // recent track (solid, behind boat)
+  const trk = trackXY(20);
+  if (trk.length > 1) {
+    ctx.strokeStyle = css("--ink"); ctx.globalAlpha = 0.55; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(T.X(trk[0].x), T.Y(trk[0].y));
+    for (const p of trk) ctx.lineTo(T.X(p.x), T.Y(p.y));
+    ctx.stroke(); ctx.globalAlpha = 1;
+  }
+
+  // mark
+  ctx.beginPath(); ctx.arc(T.X(MARK.x), T.Y(MARK.y), 8, 0, 7);
+  if (markIsGhost) {
+    ctx.strokeStyle = css("--mark"); ctx.lineWidth = 2; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
+  } else {
+    ctx.fillStyle = css("--mark"); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = css("--panel"); ctx.stroke();
+  }
+  ctx.fillStyle = css("--ink-2"); ctx.font = "11px " + '"Avenir Next", sans-serif';
+  ctx.fillText(markIsGhost ? "ASSUMED MARK" : "MARK", T.X(MARK.x) + 13, T.Y(MARK.y) + 4);
+
+  // boat + heading vector
+  const bx = T.X(boatPos.x), by = T.Y(boatPos.y);
+  const hdg = (state && state.headingDeg != null ? state.headingDeg : headingFor(boatTack, P.cur, P.twa)) * DEG;
+  ctx.strokeStyle = css("--ink"); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(bx, by);
+  ctx.lineTo(bx + 24 * Math.sin(hdg), by - 24 * Math.cos(hdg)); ctx.stroke();
+  ctx.beginPath(); ctx.arc(bx, by, 5.5, 0, 7);
+  ctx.fillStyle = css("--ink"); ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = css("--panel"); ctx.stroke();
+
+  drawWindRose(ctx, w, P);
+  // scale bar
+  const nice = [100, 200, 500, 1000, 1852];
+  let sbm = nice[0];
+  for (const v of nice) if (v * T.s < w * 0.22) sbm = v;
+  ctx.strokeStyle = css("--ink-3"); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(w - 20 - sbm * T.s, h - 16); ctx.lineTo(w - 20, h - 16); ctx.stroke();
+  ctx.fillStyle = css("--ink-3"); ctx.font = "10.5px " + '"Avenir Next", sans-serif';
+  ctx.textAlign = "right"; ctx.fillText(sbm === 1852 ? "1 nm" : sbm + " m", w - 20, h - 23); ctx.textAlign = "left";
+}
+
+function drawWindRose(ctx, w, P) {
+  const cx = w - 52, cy = 56, R = 26;
+  ctx.strokeStyle = css("--line"); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.stroke();
+  ctx.fillStyle = css("--accent-soft");
+  ctx.beginPath(); ctx.moveTo(cx, cy);
+  ctx.arc(cx, cy, R, (P.mean - P.amp - 90) * DEG, (P.mean + P.amp - 90) * DEG); ctx.fill();
+  const a = P.cur * DEG;
+  const tipx = cx + (R - 21) * Math.sin(a), tipy = cy - (R - 21) * Math.cos(a);
+  ctx.strokeStyle = css("--ink"); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(cx + R * Math.sin(a), cy - R * Math.cos(a)); ctx.lineTo(tipx, tipy); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(tipx, tipy);
+  ctx.lineTo(tipx + 5 * Math.sin(a + 150 * DEG), tipy - 5 * Math.cos(a + 150 * DEG));
+  ctx.lineTo(tipx + 5 * Math.sin(a - 150 * DEG), tipy - 5 * Math.cos(a - 150 * DEG));
+  ctx.closePath(); ctx.fillStyle = css("--ink"); ctx.fill();
+  ctx.fillStyle = css("--ink-2"); ctx.font = "10.5px ui-monospace, Menlo, monospace";
+  ctx.textAlign = "center"; ctx.fillText("TWD " + fmtDeg(P.cur), cx, cy + R + 14); ctx.textAlign = "left";
+}
+
+/* ================= wind strip chart ================= */
+function drawStrip() {
+  const { ctx, w, h } = fitCanvas(stripC);
+  ctx.clearRect(0, 0, w, h);
+  const P = results ? results.P : params();
+  if (!P) return;
+  const now = Date.now();
+  const pastMin = Math.min(settings ? settings.fitWindowMinutes : 30, 25);
+  const T0 = -pastMin * 60, T1 = P.horizon;
+  const padL = 46, padR = 12, padT = 24, padB = 20;
+
+  // real recorded past, unwrapped around cur
+  const rows = windHist.filter(r => r[0] >= now + T0 * 1000);
+  const past = [];
+  let prev = P.cur;
+  for (let i = rows.length - 1; i >= 0; i--) {   // unwrap backwards from now
+    const v = prev + normAng(rows[i][1] - prev);
+    past.unshift([(rows[i][0] - now) / 1000, v]);
+    prev = v;
+  }
+
+  let lo = Infinity, hi = -Infinity;
+  const scan = v => { if (v < lo) lo = v; if (v > hi) hi = v; };
+  past.forEach(p => scan(p[1]));
+  if (results) results.winds.forEach(tr => tr.forEach(scan));
+  scan(P.mean - P.amp); scan(P.mean + P.amp);
+  lo -= 3; hi += 3;
+
+  const X = t => padL + (t - T0) / (T1 - T0) * (w - padL - padR);
+  const Y = v => padT + (hi - v) / (hi - lo) * (h - padT - padB);
+
+  const stepY = (hi - lo) > 30 ? 10 : 5;
+  ctx.font = "10.5px ui-monospace, Menlo, monospace"; ctx.fillStyle = css("--ink-3");
+  ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+  for (let v = Math.ceil(lo / stepY) * stepY; v <= hi; v += stepY) {
+    ctx.beginPath(); ctx.moveTo(padL, Y(v)); ctx.lineTo(w - padR, Y(v)); ctx.stroke();
+    ctx.fillText(fmtDeg(v), 8, Y(v) + 3.5);
+  }
+  ctx.textAlign = "center";
+  const tickStep = (T1 - T0) > 1800 ? 600 : 300;
+  for (let t = Math.ceil(T0 / tickStep) * tickStep; t <= T1; t += tickStep) {
+    ctx.fillText(t === 0 ? "now" : (t > 0 ? "+" : "") + Math.round(t / 60) + "m", X(t), h - 6);
+  }
+  ctx.textAlign = "left";
+
+  ctx.setLineDash([4, 5]); ctx.strokeStyle = css("--ink-3"); ctx.globalAlpha = 0.6;
+  ctx.beginPath(); ctx.moveTo(padL, Y(P.mean)); ctx.lineTo(w - padR, Y(P.mean)); ctx.stroke();
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+
+  ctx.strokeStyle = css("--line"); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(X(0), padT - 6); ctx.lineTo(X(0), h - padB); ctx.stroke();
+
+  if (results) {
+    ctx.strokeStyle = css("--ink"); ctx.globalAlpha = 0.07; ctx.lineWidth = 1;
+    for (const tr of results.winds) {
+      ctx.beginPath(); ctx.moveTo(X(0), Y(P.cur));
+      tr.forEach((v, i) => ctx.lineTo(X((i + 1) * 16), Y(v)));
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  if (past.length > 1) {
+    ctx.strokeStyle = css("--ink"); ctx.lineWidth = 2;
+    ctx.beginPath();
+    past.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])));
+    ctx.stroke();
+  }
+  stripC._map = { X, Y, T0, T1, padL, padR, past, P };
+}
+
+stripC.addEventListener("mousemove", e => {
+  const m = stripC._map; if (!m) return;
+  const r = stripC.getBoundingClientRect();
+  const t = m.T0 + (e.clientX - r.left - m.padL) / (r.width - m.padL - m.padR) * (m.T1 - m.T0);
+  const tip = $("tip");
+  if (t < m.T0 || t > m.T1) { tip.style.display = "none"; return; }
+  let v;
+  if (t <= 0 && m.past.length) { const p = m.past.reduce((a, b) => Math.abs(b[0] - t) < Math.abs(a[0] - t) ? b : a); v = p[1]; }
+  else v = m.P.mean + m.P.trend * Math.max(0, t);
+  tip.style.display = "block";
+  tip.textContent = (t <= 0 ? "" : "≈") + fmtDeg(v) + " · " + (t >= 0 ? "+" : "−") + Math.abs(t / 60).toFixed(1) + " min";
+  tip.style.left = Math.min(e.clientX - r.left + 12, r.width - 130) + "px";
+  tip.style.top = "26px";
+});
+stripC.addEventListener("mouseleave", () => $("tip").style.display = "none");
+
+/* ================= interactions ================= */
+courseC.addEventListener("click", async e => {
+  if (!state || !state._proj) return;
+  const r = courseC.getBoundingClientRect();
+  const T = courseTransform(r.width, r.height);
+  const ll = state._proj.toLL(T.invX(e.clientX - r.left), T.invY(e.clientY - r.top));
+  if (demoMode) {
+    demo._manualMark = { ...ll, source: "manual" };
+  } else {
+    try { await fetchJson(API + "/mark", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ll) }); }
+    catch (err) { $("status").textContent = "mark update failed"; return; }
+  }
+  await loadState(); updateCards(); run();
+});
+
+$("clearMark").addEventListener("click", async () => {
+  if (demoMode) demo._manualMark = null;
+  else { try { await fetchJson(API + "/mark", { method: "DELETE" }); } catch (e) { /* no server */ } }
+  await loadState(); updateCards(); run();
+});
+
+$("reroll").addEventListener("click", () => { seed = (seed * 1664525 + 1013904223) >>> 0; run(); });
+$("refit").addEventListener("click", async () => { await loadHistory(); refit(); updateCards(); run(); });
+
+/* ================= wiring ================= */
+function refit() {
+  const win = settings ? settings.fitWindowMinutes : 30;
+  const tau = (settings && settings.windOverride && settings.windOverride.persistenceTauSeconds) || 120;
+  const f = fitWind(windHist, win, tau);
+  if (f) fit = f;
+}
+
+function drawAll() { drawCourse(); drawStrip(); }
+
+async function tick() {
+  await loadState();
+  updateCards(); drawAll();
+}
+async function slowTick() {
+  await loadHistory();
+  refit(); refreshGeometry(); updateCards(); run();
+}
+
+(async function init() {
+  await loadState();
+  if (!demoMode) await loadHistory();
+  refit(); refreshGeometry(); updateCards(); run();
+  setInterval(tick, 5000);
+  setInterval(slowTick, 30000);
+})();
+
+new ResizeObserver(drawAll).observe(courseC.parentElement);
+new ResizeObserver(drawAll).observe(stripC.parentElement);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { drawAll(); updateStats(); });
+new MutationObserver(() => { drawAll(); updateStats(); })
+  .observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+</script>
