@@ -66,6 +66,13 @@
     color: var(--ink-2); text-transform: uppercase;
   }
   #srcBadge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+  .gainfig { width: 208px; }
+  .gainfig .lbl {
+    font-size: 9.5px; letter-spacing: 0.12em; color: var(--ink-3);
+    text-transform: uppercase; margin-bottom: 3px; white-space: nowrap;
+  }
+  .gainfig canvas { position: static; display: block; width: 100%; height: 30px; }
+  .gainfig .axis { display: flex; justify-content: space-between; font-size: 9px; color: var(--ink-3); margin-top: 1px; }
   #srcBadge.demo .dot { background: var(--warn); }
   #srcBadge.stale .dot { background: var(--mark); }
 
@@ -137,6 +144,8 @@
     .gauge { padding: 4px 10px 3px; }
     .gauge .val { font-size: 16px; }
     .gauge .unit { display: none; }
+    .gainfig { width: 172px; }
+    .gainfig canvas { height: 24px; }
     .viz { grid-template-rows: minmax(0, 1fr) 128px; padding: 7px 8px 8px; gap: 7px; }
   }
 </style>
@@ -149,6 +158,11 @@
       <div id="verdictText">Waiting for data…</div>
       <div id="verdictSub"></div>
     </div>
+  </div>
+  <div class="gainfig" title="Distribution of seconds gained by tacking, across all simulated futures">
+    <div class="lbl">Seconds gained by tacking</div>
+    <canvas id="gain"></canvas>
+    <div class="axis mono"><span id="gainLo">—</span><span>0</span><span id="gainHi">—</span></div>
   </div>
   <div class="gauges">
     <div class="gauge"><div class="lbl">TWD</div><div class="val" id="gTwd">—</div><div class="unit">°true</div></div>
@@ -641,12 +655,15 @@ function run() {
 function updateStats() {
   const r = results; if (!r || !r.done) return;
   const pct = 100 * r.wins / r.done;
+  const d = [...r.diffs].sort((a, b) => a - b);
+  const med = d[Math.floor(d.length / 2)];
+  const medTxt = "median " + (med >= 0 ? "+" : "−") + Math.abs(med).toFixed(0) + " s";
   $("winPct").textContent = pct.toFixed(0) + "%";
   $("winPct").style.color = pct >= 52 ? css("--tack") : pct <= 48 ? css("--hold") : css("--ink");
   $("verdictText").textContent =
-    pct >= 52 ? "Tack now — wins " + pct.toFixed(0) + "% of futures"
-    : pct <= 48 ? "Hold — tacking wins only " + pct.toFixed(0) + "%"
-    : "Toss-up — sail your plan";
+    pct >= 52 ? "Tack now — wins " + pct.toFixed(0) + "% · " + medTxt
+    : pct <= 48 ? "Hold — tacking wins " + pct.toFixed(0) + "% · " + medTxt
+    : "Toss-up — " + medTxt + " · sail your plan";
   const shift = normAng(r.P.cur - r.P.mean);
   const rel = boatTack === "port" ? shift : -shift;
   const dist = Math.hypot(MARK.x - boatPos.x, MARK.y - boatPos.y);
@@ -655,8 +672,6 @@ function updateStats() {
     (rel > 1 ? "headed " + Math.abs(rel).toFixed(0) + "°" : rel < -1 ? "lifted " + Math.abs(rel).toFixed(0) + "°" : "on mean wind") +
     " · mark " + (dist >= 1852 ? (dist / 1852).toFixed(1) + " nm" : Math.round(dist) + " m") +
     (markIsGhost ? " (assumed upwind)" : "");
-  const d = [...r.diffs].sort((a, b) => a - b);
-  const med = d[Math.floor(d.length / 2)];
   $("medGain").textContent = (med >= 0 ? "+" : "−") + Math.abs(med).toFixed(0) + " s";
   $("tackCounts").textContent = (r.tacksA / r.done).toFixed(1) + " / " + (r.tacksB / r.done).toFixed(1);
   $("simCount").textContent = r.done;
@@ -983,7 +998,42 @@ function refit() {
   if (f) fit = f;
 }
 
-function drawAll() { drawCourse(); drawStrip(); }
+/* Δt strip: histogram of seconds gained by tacking, one bar mass per future.
+   Symmetric range keeps zero centred so the teal/amber balance reads at a
+   glance; tails clamp into the end bins; ink triangle = median. */
+function drawGain() {
+  const c = $("gain"); if (!c) return;
+  const { ctx, w, h } = fitCanvas(c);
+  ctx.clearRect(0, 0, w, h);
+  const r = results;
+  if (!r || r.diffs.length < 20) { $("gainLo").textContent = "—"; $("gainHi").textContent = "—"; return; }
+  const abs = r.diffs.map(Math.abs).sort((a, b) => a - b);
+  const L = Math.max(10, 10 * Math.ceil(abs[Math.floor(0.95 * (abs.length - 1))] / 10));
+  const BINS = 24;                          // even count: zero falls on a bin edge
+  const counts = new Array(BINS).fill(0);
+  for (const v of r.diffs) counts[Math.min(BINS - 1, Math.floor((clamp(v, -L, L) + L) / (2 * L) * BINS))]++;
+  const maxN = Math.max(...counts);
+  const X = v => (v + L) / (2 * L) * w;
+  for (let k = 0; k < BINS; k++) {
+    if (!counts[k]) continue;
+    const x0 = X(-L + 2 * L * k / BINS) + 1, x1 = X(-L + 2 * L * (k + 1) / BINS) - 1;
+    const bh = Math.max(1.5, (h - 6) * counts[k] / maxN);
+    ctx.fillStyle = css(k >= BINS / 2 ? "--tack" : "--hold");
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x0, h - bh, x1 - x0, bh + 2, [2, 2, 0, 0]);
+    else ctx.rect(x0, h - bh, x1 - x0, bh);
+    ctx.fill();
+  }
+  ctx.strokeStyle = css("--ink-3"); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h); ctx.stroke();
+  const d = [...r.diffs].sort((a, b) => a - b);
+  const mx = X(clamp(d[Math.floor(d.length / 2)], -L, L));
+  ctx.fillStyle = css("--ink");
+  ctx.beginPath(); ctx.moveTo(mx - 3.5, 0); ctx.lineTo(mx + 3.5, 0); ctx.lineTo(mx, 5); ctx.closePath(); ctx.fill();
+  $("gainLo").textContent = "−" + L + "s"; $("gainHi").textContent = "+" + L + "s";
+}
+
+function drawAll() { drawCourse(); drawStrip(); drawGain(); }
 
 async function tick() {
   await loadState();

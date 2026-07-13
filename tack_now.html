@@ -76,6 +76,13 @@
   .chip b { color: var(--ink); font-weight: 600; }
   .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
   .sw.tack { background: var(--tack); } .sw.hold { background: var(--hold); }
+  .gainfig { width: 208px; }
+  .gainfig .lbl {
+    font-size: 9.5px; letter-spacing: 0.12em; color: var(--ink-3);
+    text-transform: uppercase; margin-bottom: 3px; white-space: nowrap;
+  }
+  .gainfig canvas { position: static; display: block; width: 100%; height: 30px; }
+  .gainfig .axis { display: flex; justify-content: space-between; font-size: 9px; color: var(--ink-3); margin-top: 1px; }
 
   /* ---------- layout ---------- */
   main { display: grid; grid-template-columns: 296px minmax(0, 1fr); gap: 0; min-height: 0; }
@@ -145,6 +152,11 @@
       <div id="verdictText">Running…</div>
       <div id="verdictSub"></div>
     </div>
+  </div>
+  <div class="gainfig" title="Distribution of seconds gained by tacking, across all simulated futures">
+    <div class="lbl">Seconds gained by tacking</div>
+    <canvas id="gain"></canvas>
+    <div class="axis mono"><span id="gainLo">—</span><span>0</span><span id="gainHi">—</span></div>
   </div>
   <div class="chips">
     <div class="chip"><span class="sw tack"></span>Tack now</div>
@@ -435,19 +447,20 @@ function run() {
 function updateStats() {
   const r = results; if (!r || !r.done) return;
   const pct = 100 * r.wins / r.done;
+  const d = [...r.diffs].sort((a, b) => a - b);
+  const med = d[Math.floor(d.length / 2)];
+  const medTxt = "median " + (med >= 0 ? "+" : "−") + Math.abs(med).toFixed(0) + " s";
   $("winPct").textContent = pct.toFixed(0) + "%";
   $("winPct").style.color = pct >= 52 ? css("--tack") : pct <= 48 ? css("--hold") : css("--ink");
   $("verdictText").textContent =
-    pct >= 52 ? "Tack now — it wins " + pct.toFixed(0) + "% of futures"
-    : pct <= 48 ? "Hold — tacking wins only " + pct.toFixed(0) + "%"
-    : "Toss-up — sail your plan";
+    pct >= 52 ? "Tack now — wins " + pct.toFixed(0) + "% · " + medTxt
+    : pct <= 48 ? "Hold — tacking wins " + pct.toFixed(0) + "% · " + medTxt
+    : "Toss-up — " + medTxt + " · sail your plan";
   const shift = normAng(r.P.cur - r.P.mean);
   const rel = boatTack === "port" ? shift : -shift;
   $("verdictSub").textContent =
     (boatTack === "port" ? "Port tack" : "Starboard tack") + " · currently " +
     (rel > 1 ? "headed " + Math.abs(rel).toFixed(0) + "°" : rel < -1 ? "lifted " + Math.abs(rel).toFixed(0) + "°" : "on mean wind");
-  const d = [...r.diffs].sort((a, b) => a - b);
-  const med = d[Math.floor(d.length / 2)];
   $("medGain").textContent = (med >= 0 ? "+" : "−") + Math.abs(med).toFixed(0) + " s";
   $("tackCounts").textContent = (r.tacksA / r.done).toFixed(1) + " / " + (r.tacksB / r.done).toFixed(1);
   $("simCount").textContent = r.done;
@@ -733,7 +746,43 @@ function refreshOutputs() {
 }
 let timer = null;
 function schedule() { refreshOutputs(); drawAll(); clearTimeout(timer); timer = setTimeout(run, 160); }
-function drawAll() { drawCourse(); drawStrip(); }
+/* Δt strip: histogram of seconds gained by tacking, one bar mass per future.
+   Symmetric range keeps zero centred so the teal/amber balance reads at a
+   glance; tails clamp into the end bins; ink triangle = median. */
+function drawGain() {
+  const c = $("gain"); if (!c) return;
+  const { ctx, w, h } = fitCanvas(c);
+  ctx.clearRect(0, 0, w, h);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const r = results;
+  if (!r || r.diffs.length < 20) { $("gainLo").textContent = "—"; $("gainHi").textContent = "—"; return; }
+  const abs = r.diffs.map(Math.abs).sort((a, b) => a - b);
+  const L = Math.max(10, 10 * Math.ceil(abs[Math.floor(0.95 * (abs.length - 1))] / 10));
+  const BINS = 24;                          // even count: zero falls on a bin edge
+  const counts = new Array(BINS).fill(0);
+  for (const v of r.diffs) counts[Math.min(BINS - 1, Math.floor((clamp(v, -L, L) + L) / (2 * L) * BINS))]++;
+  const maxN = Math.max(...counts);
+  const X = v => (v + L) / (2 * L) * w;
+  for (let k = 0; k < BINS; k++) {
+    if (!counts[k]) continue;
+    const x0 = X(-L + 2 * L * k / BINS) + 1, x1 = X(-L + 2 * L * (k + 1) / BINS) - 1;
+    const bh = Math.max(1.5, (h - 6) * counts[k] / maxN);
+    ctx.fillStyle = css(k >= BINS / 2 ? "--tack" : "--hold");
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x0, h - bh, x1 - x0, bh + 2, [2, 2, 0, 0]);
+    else ctx.rect(x0, h - bh, x1 - x0, bh);
+    ctx.fill();
+  }
+  ctx.strokeStyle = css("--ink-3"); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h); ctx.stroke();
+  const d = [...r.diffs].sort((a, b) => a - b);
+  const mx = X(clamp(d[Math.floor(d.length / 2)], -L, L));
+  ctx.fillStyle = css("--ink");
+  ctx.beginPath(); ctx.moveTo(mx - 3.5, 0); ctx.lineTo(mx + 3.5, 0); ctx.lineTo(mx, 5); ctx.closePath(); ctx.fill();
+  $("gainLo").textContent = "−" + L + "s"; $("gainHi").textContent = "+" + L + "s";
+}
+
+function drawAll() { drawCourse(); drawStrip(); drawGain(); }
 
 for (const k in sliders) $("p_" + k).addEventListener("input", () => {
   if (k !== "cur" && k !== "mean" && k !== "trend") pastedWind = pastedWind; else pastedWind = null;
