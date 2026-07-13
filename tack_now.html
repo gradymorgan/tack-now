@@ -322,17 +322,19 @@ function makeBoat(tack) {
 }
 function doTack(b, t, P) { b.tack = b.tack === "port" ? "stbd" : "port"; b.freeze = P.cost; b.lastTack = t; b.tacks++; }
 
-function policy(b, twd, t, P) {
-  // Laylines are called on the expected wind (mean + trend), not the gust of the
-  // moment — chasing instantaneous lifts into the corner is what causes overstanding.
-  // Margin > 0 tacks past the line (insurance to fetch); < 0 shoots it early.
+function policy(b, twd, slowW, t, P) {
+  // Laylines are called in the slow current wind (trend + oscillation, minus the
+  // fast flicker): a good crew reads the wind it is in but can't foresee the
+  // shifts that arrive after the tack. Margin > 0 tacks past the line
+  // (insurance to fetch); < 0 shoots it early. The per-race judgment draw
+  // (b.layZ) disperses over- and under-standers, sharpening as the mark nears.
   // Skipped close to the mark, where bearing swings too fast to be a useful signal.
-  if (Math.hypot(MARK.x - b.x, MARK.y - b.y) > 30 && t - b.lastTack >= 8) {
+  const dist = Math.hypot(MARK.x - b.x, MARK.y - b.y);
+  if (dist > 30 && t - b.lastTack >= 8) {
     const bear = Math.atan2(MARK.x - b.x, MARK.y - b.y) / DEG;
-    const judgeW = P.mean + P.trend * t;
-    const other = headingFor(b.tack === "port" ? "stbd" : "port", judgeW, P.twa);
+    const other = headingFor(b.tack === "port" ? "stbd" : "port", slowW, P.twa);
     const d = normAng(bear - other);
-    const m = P.lay + (b.layErr || 0);
+    const m = P.lay + (b.layZ || 0) * P.laySig * Math.min(1, dist / 500);
     if ((b.tack === "port" && d <= -m) || (b.tack === "stbd" && d >= m)) return true;
   }
   // header rule: only when free to manoeuvre, judged against the trend-adjusted mean
@@ -341,7 +343,7 @@ function policy(b, twd, t, P) {
   return (b.tack === "port" && shift > P.thr) || (b.tack === "stbd" && shift < -P.thr);
 }
 
-function stepBoat(b, twd, t, P, path) {
+function stepBoat(b, twd, slowW, t, P, path) {
   if (b.done) return;
   if (b.freeze > 0) { b.freeze -= DT; if (path) path.push(b.x, b.y); return; }
   // free leg: if the mark can be laid without pinching on this tack, steer straight
@@ -349,7 +351,7 @@ function stepBoat(b, twd, t, P, path) {
   const bear = Math.atan2(MARK.x - b.x, MARK.y - b.y) / DEG;
   const rel = normAng(bear - twd);
   const canFetch = b.tack === "port" ? rel >= P.twa : rel <= -P.twa;
-  if (!canFetch && policy(b, twd, t, P)) { doTack(b, t, P); if (path) path.push(b.x, b.y); return; }
+  if (!canFetch && policy(b, twd, slowW, t, P)) { doTack(b, t, P); if (path) path.push(b.x, b.y); return; }
   const h = (canFetch ? bear : headingFor(b.tack, twd, P.twa)) * DEG;
   b.x += P.spd * Math.sin(h) * DT;
   b.y += P.spd * Math.cos(h) * DT;
@@ -375,7 +377,7 @@ function simulateOne(rng, P, recordPath, recordWind) {
   phase += 0.6 * gauss(rng);
   let dev = P.cur - (P.mean + P.amp * Math.sin(phase));
   const A = makeBoat(boatTack), B = makeBoat(boatTack);
-  A.layErr = B.layErr = P.laySig * gauss(rng);   // same helm misjudges both futures alike
+  A.layZ = B.layZ = gauss(rng);   // same helm misjudges both futures alike
   doTack(A, 0, P); A.lastTack = 0;           // A tacks immediately
   B.lastTack = 0;                            // B is committed to holding
   const pathA = recordPath ? [A.x, A.y] : null, pathB = recordPath ? [B.x, B.y] : null;
@@ -383,8 +385,9 @@ function simulateOne(rng, P, recordPath, recordWind) {
   for (let t = DT; t <= MAX_T; t += DT) {
     dev += -dev * (DT / P.tau) + P.sigma * Math.sqrt(DT / 60) * gauss(rng);
     const twd = P.mean + P.trend * t + P.amp * Math.sin(2 * Math.PI * t / P.period + phase) + dev;
-    stepBoat(A, twd, t, P, pathA);
-    stepBoat(B, twd, t, P, pathB);
+    const slowW = twd - dev;      // what the crew judges laylines in
+    stepBoat(A, twd, slowW, t, P, pathA);
+    stepBoat(B, twd, slowW, t, P, pathB);
     if (windTrace && (t / DT) % 8 === 0 && t <= 1560) windTrace.push(twd);
     if (A.done && B.done) break;
   }
