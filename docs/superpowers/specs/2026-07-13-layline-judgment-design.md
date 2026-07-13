@@ -31,6 +31,20 @@ current wind is `twd − dev` (= mean + trend·t + oscillation). Pass it through
 - The header rule (shift vs trend-adjusted mean) is unchanged.
 - The `canFetch` free leg keeps using raw `twd` — that's physics, not judgment.
 
+**Amendment (same day):** judging on the slow current wind *alone* made the
+layline trigger a first-passage problem on an oscillating signal: boats
+arriving at the layline zone lifted follow the rotating layline into the
+corner and tack up to a full oscillation amplitude past the mean-wind line
+(measured: median final tack +5.1° past, 50% of boats > +5°, vs +1.0° / 11%
+before the rev). Fix: the navigator holds **two observable laylines** — the
+current slow wind and the expected wind (mean + trend) — and tacks at
+whichever is reached **first**. Arriving headed → tack on the header at the
+current-wind layline; arriving lifted → tack at the expected-wind line rather
+than chase the lift into the corner. Post-tack shifts still create honest
+over- and under-standers (measured: median +0.2°, p10 −4.0°, p90 +6.5°).
+No new prescience: mean + trend is the same reference the header rule already
+treats as observable.
+
 ### 2. Distance-scaled judgment error
 
 Replace the per-race `layErr` angle with a per-race unit draw `z = gauss(rng)`,

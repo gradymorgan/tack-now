@@ -323,17 +323,23 @@ function makeBoat(tack) {
 function doTack(b, t, P) { b.tack = b.tack === "port" ? "stbd" : "port"; b.freeze = P.cost; b.lastTack = t; b.tacks++; }
 
 function policy(b, twd, slowW, t, P) {
-  // Laylines are called in the slow current wind (trend + oscillation, minus the
-  // fast flicker): a good crew reads the wind it is in but can't foresee the
-  // shifts that arrive after the tack. Margin > 0 tacks past the line
-  // (insurance to fetch); < 0 shoots it early. The per-race judgment draw
-  // (b.layZ) disperses over- and under-standers, sharpening as the mark nears.
+  // The navigator holds two observable laylines — current slow wind (trend +
+  // oscillation, minus fast flicker) and expected wind (mean + trend) — and
+  // tacks at whichever is reached first; neither foresees post-tack shifts.
+  // Margin > 0 tacks past the line (insurance to fetch); < 0 shoots it early.
+  // The per-race judgment draw (b.layZ) disperses over- and under-standers,
+  // sharpening as the mark nears.
   // Skipped close to the mark, where bearing swings too fast to be a useful signal.
   const dist = Math.hypot(MARK.x - b.x, MARK.y - b.y);
   if (dist > 30 && t - b.lastTack >= 8) {
     const bear = Math.atan2(MARK.x - b.x, MARK.y - b.y) / DEG;
-    const other = headingFor(b.tack === "port" ? "stbd" : "port", slowW, P.twa);
-    const d = normAng(bear - other);
+    const oTack = b.tack === "port" ? "stbd" : "port";
+    const dCur = normAng(bear - headingFor(oTack, slowW, P.twa));
+    const dExp = normAng(bear - headingFor(oTack, P.mean + P.trend * t, P.twa));
+    // whichever layline is reached first: current wind (arriving headed →
+    // tack on the header) or expected wind (arriving lifted → don't chase
+    // the lift past the average line into the corner)
+    const d = b.tack === "port" ? Math.min(dCur, dExp) : Math.max(dCur, dExp);
     const m = P.lay + (b.layZ || 0) * P.laySig * Math.min(1, dist / 500);
     if ((b.tack === "port" && d <= -m) || (b.tack === "stbd" && d >= m)) return true;
   }
