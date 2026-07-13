@@ -43,6 +43,22 @@ gauges, labelled "seconds gained by tacking":
 Compact (max-height 720 px) header keeps the strip at reduced size — it is
 the feature, so it never collapses entirely.
 
+## Hover linking (same day)
+
+Hovering a histogram bar highlights that bin's futures everywhere: the
+corresponding tack-now/hold path pairs on the course canvas and the wind
+traces on the strip chart draw bright on top while the rest fade back; the
+strip caption becomes "n of N futures · lo…hi s" while hovering.
+
+- Hover state is a Δt **value range** (not a bin index) so it stays valid
+  across the 5 s Monte Carlo re-runs; a shared `gainBin` helper keeps histogram
+  counts and highlight membership in exact agreement.
+- Paths and wind traces are recorded for up to 240 sims (drawn subset stays at
+  `pathsDrawn` / ~28 when idle) so thin tail bins still have futures to light;
+  highlights cap at 48 with alpha scaled by count so a dominant bin doesn't
+  render as a solid blob.
+- Pointer events, so tablet taps behave like hover.
+
 ## Validation
 
 Headless Chrome screenshots at 1024×600 (7" tablet target), light and dark,

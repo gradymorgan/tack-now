@@ -631,7 +631,10 @@ function run() {
   const token = ++runToken;
   const rng = mulberry32(seed);
   const N = P.n, K = Math.min(P.pathsShown, N), W = Math.min(28, N);
-  const res = { wins: 0, diffs: [], tacksA: 0, tacksB: 0, pathsA: [], pathsB: [], winds: [], done: 0, N, P };
+  // record beyond the drawn subset so hovering a thin histogram bin still has
+  // paths and wind traces to light up
+  const R = Math.max(K, Math.min(N, 240));
+  const res = { wins: 0, diffs: [], tacksA: 0, tacksB: 0, pathsA: [], pathsB: [], winds: [], done: 0, N, P, K, W };
   results = res;
   $("status").textContent = "running…";
   let i = 0;
@@ -639,7 +642,7 @@ function run() {
     if (token !== runToken) return;
     const end = Math.min(i + 60, N);
     for (; i < end; i++) {
-      const r = simulateOne(rng, P, i < K, i < W);
+      const r = simulateOne(rng, P, i < R, i < R);
       if (r.tA < r.tB - 0.5) res.wins++; else if (Math.abs(r.tA - r.tB) <= 0.5) res.wins += 0.5;
       res.diffs.push(r.tB - r.tA);
       res.tacksA += r.tacksA; res.tacksB += r.tacksB;
@@ -775,15 +778,27 @@ function drawCourse() {
   }
   ctx.setLineDash([]); ctx.globalAlpha = 1;
 
-  // simulated paths — hold under, tack-now over
+  // simulated paths — hold under, tack-now over; a hovered histogram bin
+  // draws its futures bright on top while the rest fade back
   const alpha = parseFloat(css("--path-alpha")) || 0.08;
   if (results) {
-    for (const [paths, color] of [[results.pathsB, css("--hold")], [results.pathsA, css("--tack")]]) {
-      ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = 1.1;
-      for (const p of paths) {
-        ctx.beginPath(); ctx.moveTo(T.X(p[0]), T.Y(p[1]));
-        for (let j = 2; j < p.length; j += 2) ctx.lineTo(T.X(p[j]), T.Y(p[j + 1]));
-        ctx.stroke();
+    const stroke = p => {
+      ctx.beginPath(); ctx.moveTo(T.X(p[0]), T.Y(p[1]));
+      for (let j = 2; j < p.length; j += 2) ctx.lineTo(T.X(p[j]), T.Y(p[j + 1]));
+      ctx.stroke();
+    };
+    const layers = [[results.pathsB, css("--hold")], [results.pathsA, css("--tack")]];
+    for (const [paths, color] of layers) {
+      ctx.strokeStyle = color; ctx.globalAlpha = gainHover ? alpha * 0.45 : alpha; ctx.lineWidth = 1.1;
+      paths.slice(0, results.K).forEach((p, i) => { if (!inGainHover(results.diffs[i])) stroke(p); });
+    }
+    if (gainHover) {
+      const hl = [];
+      results.pathsA.forEach((p, i) => { if (inGainHover(results.diffs[i]) && hl.length < 48) hl.push(i); });
+      ctx.lineWidth = 1.6; ctx.globalAlpha = clamp(14 / Math.max(1, hl.length), 0.3, 0.85);
+      for (const [paths, color] of layers) {
+        ctx.strokeStyle = color;
+        for (const i of hl) stroke(paths[i]);
       }
     }
     ctx.globalAlpha = 1;
@@ -911,11 +926,18 @@ function drawStrip() {
   ctx.beginPath(); ctx.moveTo(X(0), padT - 6); ctx.lineTo(X(0), h - padB); ctx.stroke();
 
   if (results) {
-    ctx.strokeStyle = css("--ink"); ctx.globalAlpha = 0.07; ctx.lineWidth = 1;
-    for (const tr of results.winds) {
+    const trace = tr => {
       ctx.beginPath(); ctx.moveTo(X(0), Y(P.cur));
       tr.forEach((v, i) => ctx.lineTo(X((i + 1) * 16), Y(v)));
       ctx.stroke();
+    };
+    ctx.strokeStyle = css("--ink"); ctx.globalAlpha = gainHover ? 0.035 : 0.07; ctx.lineWidth = 1;
+    results.winds.slice(0, results.W).forEach((tr, i) => { if (!inGainHover(results.diffs[i])) trace(tr); });
+    if (gainHover) {
+      const hl = [];
+      results.winds.forEach((tr, i) => { if (inGainHover(results.diffs[i]) && hl.length < 48) hl.push(i); });
+      ctx.globalAlpha = clamp(10 / Math.max(1, hl.length), 0.25, 0.7); ctx.lineWidth = 1.4;
+      for (const i of hl) trace(results.winds[i]);
     }
     ctx.globalAlpha = 1;
   }
@@ -1000,30 +1022,38 @@ function refit() {
 
 /* Δt strip: histogram of seconds gained by tacking, one bar mass per future.
    Symmetric range keeps zero centred so the teal/amber balance reads at a
-   glance; tails clamp into the end bins; ink triangle = median. */
+   glance; tails clamp into the end bins; ink triangle = median. Hovering a
+   bar highlights that bin's futures on the course and wind charts. */
+let gainHover = null;   // { lo, hi } Δt range — value-based so it survives re-runs
+const gainBin = (v, L, B) => Math.min(B - 1, Math.floor((Math.max(-L, Math.min(L, v)) + L) / (2 * L) * B));
+const inGainHover = v => gainHover && v >= gainHover.lo && v < gainHover.hi;
+
 function drawGain() {
   const c = $("gain"); if (!c) return;
   const { ctx, w, h } = fitCanvas(c);
   ctx.clearRect(0, 0, w, h);
   const r = results;
-  if (!r || r.diffs.length < 20) { $("gainLo").textContent = "—"; $("gainHi").textContent = "—"; return; }
+  if (!r || r.diffs.length < 20) { c._map = null; $("gainLo").textContent = "—"; $("gainHi").textContent = "—"; return; }
   const abs = r.diffs.map(Math.abs).sort((a, b) => a - b);
   const L = Math.max(10, 10 * Math.ceil(abs[Math.floor(0.95 * (abs.length - 1))] / 10));
   const BINS = 24;                          // even count: zero falls on a bin edge
   const counts = new Array(BINS).fill(0);
-  for (const v of r.diffs) counts[Math.min(BINS - 1, Math.floor((clamp(v, -L, L) + L) / (2 * L) * BINS))]++;
+  for (const v of r.diffs) counts[gainBin(v, L, BINS)]++;
   const maxN = Math.max(...counts);
   const X = v => (v + L) / (2 * L) * w;
+  const hk = gainHover ? gainBin((gainHover.lo + gainHover.hi) / 2, L, BINS) : -1;
   for (let k = 0; k < BINS; k++) {
     if (!counts[k]) continue;
     const x0 = X(-L + 2 * L * k / BINS) + 1, x1 = X(-L + 2 * L * (k + 1) / BINS) - 1;
     const bh = Math.max(1.5, (h - 6) * counts[k] / maxN);
     ctx.fillStyle = css(k >= BINS / 2 ? "--tack" : "--hold");
+    ctx.globalAlpha = hk < 0 || k === hk ? 1 : 0.35;
     ctx.beginPath();
     if (ctx.roundRect) ctx.roundRect(x0, h - bh, x1 - x0, bh + 2, [2, 2, 0, 0]);
     else ctx.rect(x0, h - bh, x1 - x0, bh);
     ctx.fill();
   }
+  ctx.globalAlpha = 1;
   ctx.strokeStyle = css("--ink-3"); ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h); ctx.stroke();
   const d = [...r.diffs].sort((a, b) => a - b);
@@ -1031,9 +1061,31 @@ function drawGain() {
   ctx.fillStyle = css("--ink");
   ctx.beginPath(); ctx.moveTo(mx - 3.5, 0); ctx.lineTo(mx + 3.5, 0); ctx.lineTo(mx, 5); ctx.closePath(); ctx.fill();
   $("gainLo").textContent = "−" + L + "s"; $("gainHi").textContent = "+" + L + "s";
+  c._map = { L, BINS, counts, n: r.diffs.length };
 }
 
 function drawAll() { drawCourse(); drawStrip(); drawGain(); }
+
+{
+  const gc = $("gain");
+  const lbl = document.querySelector(".gainfig .lbl");
+  const lblDefault = lbl.textContent;
+  gc.addEventListener("pointermove", e => {
+    const m = gc._map; if (!m) return;
+    const r = gc.getBoundingClientRect();
+    const k = clamp(Math.floor((e.clientX - r.left) / r.width * m.BINS), 0, m.BINS - 1);
+    const lo = -m.L + 2 * m.L * k / m.BINS, hi = lo + 2 * m.L / m.BINS;
+    if (gainHover && gainHover.lo === lo && gainHover.hi === hi) return;
+    gainHover = { lo, hi };
+    const fmt = v => (v >= 0 ? "+" : "−") + (2 * m.L / m.BINS < 2 ? Math.abs(v).toFixed(1) : Math.round(Math.abs(v)));
+    lbl.textContent = m.counts[k] + " of " + m.n + " futures · " + fmt(lo) + "…" + fmt(hi) + " s";
+    drawAll();
+  });
+  gc.addEventListener("pointerleave", () => {
+    if (!gainHover) return;
+    gainHover = null; lbl.textContent = lblDefault; drawAll();
+  });
+}
 
 async function tick() {
   await loadState();
